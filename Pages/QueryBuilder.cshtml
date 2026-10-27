@@ -1,0 +1,334 @@
+﻿@page
+@model QueryBuilderModel
+@{
+    ViewData["Title"] = "Query Builder";
+}
+
+<div class="container-fluid px-0">
+    <div class="mb-4">
+        <h2 class="h4 mb-1">Query Builder</h2>
+        <p class="text-secondary mb-0">
+            Choose fields, run a query, and explore your data.
+        </p>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-12 col-md-4">
+                    <label for="dataset" class="form-label">Dataset</label>
+                    <select id="dataset" class="form-select">
+                        <option value="sales">Sales</option>
+                    </select>
+                </div>
+
+                <div class="col-12 col-md-4">
+                    <label for="dimension" class="form-label">Group by</label>
+                    <select id="dimension" class="form-select"></select>
+                </div>
+
+                <div class="col-12 col-md-4">
+                    <label for="measure" class="form-label">Measure</label>
+                    <select id="measure" class="form-select"></select>
+                </div>
+            </div>
+            <hr class="my-4" />
+
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h3 class="h6 mb-1">Filters</h3>
+                    <p class="text-secondary small mb-0">
+                        Narrow your results using one or more conditions.
+                    </p>
+                </div>
+                <button id="addFilter" class="btn btn-outline-primary btn-sm"
+                        type="button">
+                    + Add filter
+                </button>
+            </div>
+
+            <div id="filtersContainer" class="d-flex flex-column gap-2"></div>
+            <div class="d-flex justify-content-end mt-3">
+                <button id="runQuery" class="btn btn-primary" type="button">
+                    Run query
+                </button>
+            </div>
+
+            <div id="queryError" class="alert alert-danger mt-3 d-none"
+                 role="alert"></div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <h3 class="h6 mb-3">Results</h3>
+
+            <div id="queryStatus" class="text-secondary small mb-3">
+                Loading dataset metadata...
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead id="resultsHead" class="table-light"></thead>
+                    <tbody id="resultsBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    const datasetSelect = document.getElementById('dataset');
+    const dimensionSelect = document.getElementById('dimension');
+    const measureSelect = document.getElementById('measure');
+    const runButton = document.getElementById('runQuery');
+    const status = document.getElementById('queryStatus');
+    const errorBox = document.getElementById('queryError');
+    const resultsHead = document.getElementById('resultsHead');
+    const resultsBody = document.getElementById('resultsBody');
+    const addFilterButton = document.getElementById('addFilter');
+const filtersContainer = document.getElementById('filtersContainer');
+
+let availableDimensions = [];
+
+    async function loadMetadata() {
+        try {
+            const response = await fetch(
+                '/api/dash/meta/datasets?dataset=' +
+                encodeURIComponent(datasetSelect.value));
+
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+
+            const metadata = await response.json();
+            availableDimensions = metadata.dimensions ?? [];
+
+            dimensionSelect.replaceChildren();
+            measureSelect.replaceChildren();
+
+            for (const dimension of metadata.dimensions) {
+                const option = new Option(
+                    dimension.label, dimension.key);
+                dimensionSelect.add(option);
+            }
+
+            for (const measure of metadata.measures) {
+                const option = new Option(
+                    measure.label, measure.key);
+                measureSelect.add(option);
+            }
+
+            status.textContent =
+                `Loaded ${metadata.dimensions.length} dimensions and ` +
+                `${metadata.measures.length} measures.`;
+
+                filtersContainer.replaceChildren();
+addFilterButton.disabled = availableDimensions.length === 0;
+
+        } catch (error) {
+             availableDimensions = [];
+    dimensionSelect.replaceChildren();
+    measureSelect.replaceChildren();
+    filtersContainer.replaceChildren();
+    addFilterButton.disabled = true;
+
+    showError('Could not load metadata: ' + error.message);
+    status.textContent = 'Metadata loading failed.';
+        }
+    }
+
+    
+function addFilterRow() {
+    if (!availableDimensions.length) return;
+
+    const row = document.createElement('div');
+    row.className = 'row g-2 align-items-center filter-row';
+
+    const field = document.createElement('select');
+    field.className = 'form-select filter-field';
+
+    for (const dimension of availableDimensions) {
+        field.add(new Option(dimension.label, dimension.key));
+    }
+
+    const operator = document.createElement('select');
+    operator.className = 'form-select filter-operator';
+
+    const value = document.createElement('input');
+    value.className = 'form-control filter-value';
+    value.placeholder = 'Enter value';
+    value.required = true;
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-outline-secondary';
+    remove.textContent = 'Remove';
+    remove.addEventListener('click', () => row.remove());
+
+    function updateOperators() {
+        const dimension = availableDimensions.find(
+            d => d.key === field.value
+        );
+        const type = (dimension?.type ?? 'string').toLowerCase();
+
+        const operators = ['eq', 'neq'];
+        if (['number', 'numeric', 'integer', 'decimal', 'date', 'datetime'].includes(type)) {
+            operators.push('gt', 'gte', 'lt', 'lte');
+        }
+
+        operator.replaceChildren();
+
+        const labels = {
+            eq: 'Equals',
+            neq: 'Does not equal',
+            gt: 'Greater than',
+            gte: 'Greater than or equal',
+            lt: 'Less than',
+            lte: 'Less than or equal'
+        };
+
+        for (const op of operators) {
+            operator.add(new Option(labels[op], op));
+        }
+
+        value.type = type === 'date' ? 'date' :
+            ['number', 'numeric', 'integer', 'decimal'].includes(type)
+                ? 'number' : 'text';
+
+        if (value.type === 'number') value.step = 'any';
+        else value.removeAttribute('step');
+    }
+
+    field.addEventListener('change', updateOperators);
+    updateOperators();
+
+    const fieldCol = document.createElement('div');
+    fieldCol.className = 'col-md-4';
+    fieldCol.append(field);
+
+    const operatorCol = document.createElement('div');
+    operatorCol.className = 'col-md-3';
+    operatorCol.append(operator);
+
+    const valueCol = document.createElement('div');
+    valueCol.className = 'col-md-3';
+    valueCol.append(value);
+
+    const removeCol = document.createElement('div');
+    removeCol.className = 'col-md-2';
+    removeCol.append(remove);
+
+    row.append(fieldCol, operatorCol, valueCol, removeCol);
+    filtersContainer.append(row);
+}
+
+
+    async function runQuery() {
+        errorBox.classList.add('d-none');
+        runButton.disabled = true;
+        status.textContent = 'Running query...';
+        resultsHead.replaceChildren();
+        resultsBody.replaceChildren();
+
+        try {
+
+            const filters = [];
+
+for (const row of filtersContainer.querySelectorAll('.filter-row')) {
+    const value = row.querySelector('.filter-value').value.trim();
+
+    if (!value) {
+        throw new Error('Please enter a value for every filter.');
+    }
+
+    filters.push({
+        dimension: row.querySelector('.filter-field').value,
+        operator: row.querySelector('.filter-operator').value,
+        value: value
+    });
+}
+            const response = await fetch('/api/dash/query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    dataset: datasetSelect.value,
+                    dimensions: dimensionSelect.value
+                        ? [dimensionSelect.value] : [],
+                    measures: measureSelect.value
+                        ? [measureSelect.value] : [],
+filters: filters,             
+sort: measureSelect.value
+                        ? [{ field: measureSelect.value, direction: 'desc' }]
+                        : [],
+                    page: 1,
+                    pageSize: 200
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Query failed.');
+            }
+
+            if (!data.length) {
+                status.textContent = 'No results found.';
+                return;
+            }
+
+            const columns = Object.keys(data[0]);
+
+            const headerRow = document.createElement('tr');
+            for (const column of columns) {
+                const th = document.createElement('th');
+                th.textContent = column;
+                headerRow.appendChild(th);
+            }
+            resultsHead.appendChild(headerRow);
+
+            for (const row of data) {
+                const tr = document.createElement('tr');
+
+                for (const column of columns) {
+                    const td = document.createElement('td');
+                    const value = row[column];
+
+                    td.textContent =
+                        value == null ? '' :
+                        column === measureSelect.value
+                            ? new Intl.NumberFormat('en-IN', {
+                                maximumFractionDigits: 2
+                              }).format(value)
+                            : String(value);
+
+                    tr.appendChild(td);
+                }
+
+                resultsBody.appendChild(tr);
+            }
+
+            status.textContent = `${data.length} result rows returned.`;
+
+        } catch (error) {
+            showError(error.message);
+            status.textContent = 'Query failed.';
+        } finally {
+            runButton.disabled = false;
+        }
+    }
+
+    function showError(message) {
+        errorBox.textContent = message;
+        errorBox.classList.remove('d-none');
+    }
+
+  
+addFilterButton.addEventListener('click', addFilterRow);
+datasetSelect.addEventListener('change', loadMetadata);
+runButton.addEventListener('click', runQuery);
+
+loadMetadata();
+</script>
+}

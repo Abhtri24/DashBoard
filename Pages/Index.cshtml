@@ -1,0 +1,319 @@
+﻿
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Sales Overview";
+}
+
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h2 class="h4 mb-1">Sales Overview</h2>
+            <p class="text-secondary mb-0">
+                Monitor performance and explore your sales data.
+            </p>
+        </div>
+
+        <button type="button" class="btn btn-primary"
+                onclick="window.location.href='/QueryBuilder'">
+            + Build a Query
+        </button>
+    </div>
+
+    <!-- KPI cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-secondary small">Total Revenue</div>
+<div class="fs-3 fw-semibold mt-2" id="totalRevenue">Loading...</div>                    <div class="small text-success mt-2">+8.4% this month</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-secondary small">Total Orders</div>
+                    <div class="fs-3 fw-semibold mt-2" id="totalOrders">Loading...</div>
+                    <div class="small text-success mt-2">+5.2% this month</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-secondary small">Average Order Value</div>
+                    <div class="fs-3 fw-semibold mt-2" id="averageOrderValue">Loading...</div>
+                    <div class="small text-success mt-2">+2.1% this month</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-secondary small">Active Regions</div>
+                    <div class="fs-3 fw-semibold mt-2" id="activeRegions">Loading...</div>
+                    <div class="small text-secondary mt-2">Across all sales zones</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-xl-8">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h3 class="h6 mb-1">Revenue Trend</h3>
+                    <p class="text-secondary small mb-3">
+                        Monthly revenue
+                    </p>
+                    <div style="height: 300px;">
+                        <canvas id="revenueChart"
+                                aria-label="Monthly revenue chart"
+                                role="img"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h3 class="h6 mb-1">Revenue by Region</h3>
+                    <p class="text-secondary small mb-3">
+                        Select a region to explore its transactions.
+                    </p>
+                    <div style="height: 300px;">
+                        <canvas id="regionChart"
+                                aria-label="Revenue by region chart"
+                                role="img"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent transactions -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div>
+                    <h3 class="h6 mb-1">Recent Transactions</h3>
+                    <p class="text-secondary small mb-0">
+                        Latest sales activity
+                    </p>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm"
+                        id="viewTransactions">
+                    View all
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Order ID</th>
+                            <th>Date</th>
+                            <th>Region</th>
+                            <th class="text-end">Amount</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>#ORD-1001</td>
+                            <td>26 Oct 2026</td>
+                            <td>North</td>
+                            <td class="text-end">₹18,500</td>
+                            <td><span class="badge text-bg-success">Completed</span></td>
+                        </tr>
+                        <tr>
+                            <td>#ORD-1002</td>
+                            <td>25 Oct 2026</td>
+                            <td>South</td>
+                            <td class="text-end">₹12,200</td>
+                            <td><span class="badge text-bg-success">Completed</span></td>
+                        </tr>
+                        <tr>
+                            <td>#ORD-1003</td>
+                            <td>25 Oct 2026</td>
+                            <td>West</td>
+                            <td class="text-end">₹9,750</td>
+                            <td><span class="badge text-bg-warning">Pending</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        const money = value =>
+            new Intl.NumberFormat('en-IN', {
+                style: 'currency',
+                currency: 'INR',
+                maximumFractionDigits: 0
+            }).format(value);
+
+        const number = value =>
+            new Intl.NumberFormat('en-IN').format(value);
+
+        async function loadOverview() {
+            try {
+                const response = await fetch('/api/dash/overview');
+
+                if (!response.ok) {
+                    throw new Error(`Overview request failed: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // KPI cards
+                document.getElementById('totalRevenue').textContent =
+                    money(data.kpis.totalRevenue);
+
+                document.getElementById('totalOrders').textContent =
+                    number(data.kpis.totalOrders);
+
+                document.getElementById('averageOrderValue').textContent =
+                    money(data.kpis.averageOrderValue);
+
+                document.getElementById('activeRegions').textContent =
+                    number(data.kpis.activeRegions);
+
+                // Monthly revenue chart
+                new Chart(document.getElementById('revenueChart'), {
+                    type: 'line',
+                    data: {
+                        labels: data.monthlyRevenue.map(x => x.Month),
+                        datasets: [{
+                            label: 'Revenue',
+                            data: data.monthlyRevenue.map(x => Number(x.Revenue)),
+                            borderColor: '#0d6efd',
+                            backgroundColor: 'rgba(13, 110, 253, 0.10)',
+                            fill: true,
+                            tension: 0.3
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { intersect: false, mode: 'index' },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: value =>
+                                        '₹' + number(value / 1000000) + 'M'
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Regional revenue chart
+                const regions = data.regionalRevenue;
+
+                const regionChart = new Chart(
+                    document.getElementById('regionChart'), {
+                        type: 'doughnut',
+                        data: {
+                            labels: regions.map(x => x.Region),
+                            datasets: [{
+                                data: regions.map(x => Number(x.Revenue)),
+                                backgroundColor: [
+                                    '#0d6efd', '#198754', '#ffc107', '#6f42c1'
+                                ],
+                                borderWidth: 0
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'bottom' },
+                                tooltip: {
+                                    callbacks: {
+                                        label: context =>
+                                            `${context.label}: ${money(context.raw)}`
+                                    }
+                                }
+                            },
+                            onClick: (_, elements) => {
+                                if (elements.length) {
+                                    const region =
+                                        regionChart.data.labels[elements[0].index];
+
+                                    window.location.href =
+                                        '/QueryBuilder?region=' +
+                                        encodeURIComponent(region);
+                                }
+                            }
+                        }
+                    }
+                );
+
+                // Recent transactions
+                const tbody = document.querySelector(
+                    '.table-responsive tbody');
+
+                tbody.replaceChildren();
+
+                for (const row of data.recentTransactions) {
+                    const tr = document.createElement('tr');
+
+                    const values = [
+                        row.OrderNumber,
+                        new Date(row.OrderDate).toLocaleDateString('en-IN'),
+                        row.Region,
+                        money(row.Amount)
+                    ];
+
+                    for (const [index, value] of values.entries()) {
+                        const td = document.createElement('td');
+                        td.textContent = value;
+
+                        if (index === 3) td.className = 'text-end';
+
+                        tr.appendChild(td);
+                    }
+
+                    const statusCell = document.createElement('td');
+                    const badge = document.createElement('span');
+                    badge.className = 'badge ' +
+                        (row.Status === 'Completed'
+                            ? 'text-bg-success'
+                            : row.Status === 'Returned'
+                                ? 'text-bg-warning'
+                                : 'text-bg-secondary');
+
+                    badge.textContent = row.Status;
+                    statusCell.appendChild(badge);
+                    tr.appendChild(statusCell);
+
+                    tbody.appendChild(tr);
+                }
+
+            } catch (error) {
+                console.error('Failed to load dashboard overview:', error);
+            }
+        }
+
+        document.getElementById('viewTransactions')
+            .addEventListener('click', () => {
+                window.location.href = '/Transactions';
+            });
+
+        loadOverview();
+    </script>
+}
+

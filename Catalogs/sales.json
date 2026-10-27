@@ -1,0 +1,20 @@
+{
+  "dataset": "sales",
+  "source": "dbo.vw_SalesMaster",
+  "dimensions": [
+    {
+      "key": "region",
+      "column": "Region",
+      "label": "Zone",
+      "type": "string"
+    }
+  ],
+  "measures": [
+    {
+      "key": "revenue",
+      "label": "Revenue",
+      "sql": "SUM(NetAmount)",
+      "format": "inr"
+    }
+  ]
+}
