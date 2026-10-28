@@ -8,9 +8,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 builder.Services.AddControllers();
 builder.Services.AddSingleton<SqlConnectionFactory>();
-builder.Services.AddSingleton(
-    new CatalogService(Path.Combine(builder.Environment.ContentRootPath, "Catalogs")));
-builder.Services.AddScoped<DashboardOverviewService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<CatalogService>(); builder.Services.AddScoped<DashboardOverviewService>();
 builder.Services.AddScoped<DashboardQueryService>();
 
 var app = builder.Build();

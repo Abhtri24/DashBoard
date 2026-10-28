@@ -44,12 +44,12 @@ public class DashController : ControllerBase
 	}
 	[HttpGet("meta/datasets")]
 
-    public IActionResult Meta([FromQuery] string dataset)
+    public async Task<IActionResult> Meta([FromQuery] string dataset)
     {
         try
         {
-            var definition = _catalog.Get(dataset);
-            return Ok(definition);
+            
+            return Ok(await _catalog.GetAsync(dataset));
         }
         catch (ArgumentException ex)
         {

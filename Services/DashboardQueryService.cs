@@ -34,7 +34,7 @@ namespace DashBoard.Services
 		}
 
 		public async Task<IEnumerable<dynamic>> QueryAsync(
-			DashQueryRequest request)
+		DashQueryRequest request)
 		{
 			// 1. Validate the request.
 			ArgumentNullException.ThrowIfNull(request);
@@ -64,7 +64,7 @@ namespace DashBoard.Services
 				throw new ArgumentException("Sort cannot be null.");
 
 			// 2. Resolve the dataset from the catalog.
-			var dataset = _catalog.Get(request.Dataset);
+			var dataset =  await _catalog.GetAsync(request.Dataset);
 
 			// 3. Resolve requested dimensions and measures.
 			var dimensions = request.Dimensions

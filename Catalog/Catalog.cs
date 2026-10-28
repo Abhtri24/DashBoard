@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using Dapper;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace DashBoard.Catalog;
 
@@ -20,75 +21,70 @@ public record DatasetDef(
 		Measures.FirstOrDefault(m => m.Key == key)
 		?? throw new ArgumentException($"Unknown measure '{key}'");
 }
+
 public class CatalogService
 {
-	private readonly Dictionary<string, DatasetDef> _datasets = new();
+	private static readonly TimeSpan CacheFor = TimeSpan.FromSeconds(60);
 
-	public CatalogService(string folder)
+	private readonly SqlConnectionFactory _db;
+	private readonly IMemoryCache _cache;
+
+	public CatalogService(SqlConnectionFactory db, IMemoryCache cache)
 	{
-		if (!Directory.Exists(folder))
-			throw new DirectoryNotFoundException($"Catalog folder not found: {folder}");
-
-		var files = Directory.GetFiles(folder, "*.json");
-		if (files.Length == 0)
-			throw new InvalidOperationException($"No catalog files (*.json) found in: {folder}");
-
-		var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-
-		foreach (var file in files)
-		{
-			var ds = LoadFile(file, options);
-
-			if (!_datasets.TryAdd(ds.Dataset, ds))
-				throw new InvalidOperationException(
-					$"Duplicate dataset '{ds.Dataset}' in catalog file: {file}");
-		}
+		_db = db;
+		_cache = cache;
 	}
 
-	private static DatasetDef LoadFile(string file, JsonSerializerOptions options)
+	public Task<DatasetDef> GetAsync(string name) =>
+		_cache.GetOrCreateAsync($"catalog:{name}", entry =>
+		{
+			entry.AbsoluteExpirationRelativeToNow = CacheFor;
+			return LoadAsync(name);
+		})!;
+
+	private async Task<DatasetDef> LoadAsync(string name)
 	{
-		var text = File.ReadAllText(file);
-		if (string.IsNullOrWhiteSpace(text))
-			throw new InvalidOperationException($"Catalog file is empty: {file}");
+		await using var connection = await _db.OpenAsync();
 
-		DatasetDef? ds;
-		try
-		{
-			ds = JsonSerializer.Deserialize<DatasetDef>(text, options);
-		}
-		catch (JsonException ex)
-		{
-			throw new InvalidOperationException(
-				$"Invalid JSON in catalog file: {file}. {ex.Message}", ex);
-		}
+		var dataset = await connection.QuerySingleOrDefaultAsync<DatasetRow>(
+			"SELECT SourceObject FROM dash.Dataset WHERE DatasetKey = @name",
+			new { name })
+			?? throw new ArgumentException($"Unknown dataset '{name}'");
 
-		if (ds is null)
-			throw new InvalidOperationException($"Catalog file contains no dataset: {file}");
+		var columns = (await connection.QueryAsync<ColumnRow>(
+			"""
+			SELECT ColumnKey, ColumnName, Label, Role, DataType, Agg, Format
+			FROM dash.DatasetColumn
+			WHERE DatasetKey = @name
+			ORDER BY Label
+			""",
+			new { name })).ToList();
 
-		if (string.IsNullOrWhiteSpace(ds.Dataset) || string.IsNullOrWhiteSpace(ds.Source)
-			|| ds.Dimensions is null || ds.Measures is null)
-			throw new InvalidOperationException(
-				$"Catalog file is missing required fields (dataset, source, dimensions, measures): {file}");
+		var dimensions = columns
+			.Where(c => c.Role == "dimension")
+			.Select(c => new DimensionDef(c.ColumnKey, Quote(c.ColumnName), c.Label, c.DataType))
+			.ToList();
 
-		RejectDuplicateKeys(file, "dimension", ds.Dimensions.Select(d => d.Key));
-		RejectDuplicateKeys(file, "measure", ds.Measures.Select(m => m.Key));
+		var measures = columns
+			.Where(c => c.Role == "measure")
+			.Select(c => new MeasureDef(
+				c.ColumnKey, c.Label, BuildAggregate(c.Agg!, c.ColumnName), c.Format ?? "number"))
+			.ToList();
 
-		return ds;
+		return new DatasetDef(name, dataset.SourceObject, dimensions, measures);
 	}
 
-	private static void RejectDuplicateKeys(string file, string kind, IEnumerable<string> keys)
+	private static string Quote(string name) => "[" + name.Replace("]", "]]") + "]";
+
+	private static string BuildAggregate(string agg, string column) => agg switch
 	{
-		var dupe = keys.GroupBy(k => k).FirstOrDefault(g => g.Count() > 1);
-		if (dupe is not null)
-			throw new InvalidOperationException(
-				$"Duplicate {kind} key '{dupe.Key}' in catalog file: {file}");
-	}
-	public DatasetDef Get(string name)
-	{
-		if (_datasets.TryGetValue(name, out var ds))
-		{
-			return ds;
-		}
-		throw new ArgumentException($"Unknown dataset '{name}'");
-	}
+		"SUM" or "AVG" or "MIN" or "MAX" or "COUNT" => $"{agg}({Quote(column)})",
+		"COUNT_DISTINCT" => $"COUNT(DISTINCT {Quote(column)})",
+		_ => throw new InvalidOperationException($"Unsupported aggregate '{agg}'.")
+	};
+
+	private record DatasetRow(string SourceObject);
+	private record ColumnRow(
+		string ColumnKey, string ColumnName, string Label,
+		string Role, string DataType, string? Agg, string? Format);
 }

@@ -32,6 +32,21 @@
                     <select id="measure" class="form-select"></select>
                 </div>
             </div>
+            
+            <div class="row g-2 align-items-end mt-1">
+                <div class="col-12 col-md-4">
+                    <label for="dateField" class="form-label">Date range on</label>
+                    <select id="dateField" class="form-select"></select>
+                </div>
+                <div class="col-6 col-md-4">
+                    <label for="dateFrom" class="form-label">From</label>
+                    <input type="date" id="dateFrom" class="form-control" />
+                </div>
+                <div class="col-6 col-md-4">
+                    <label for="dateTo" class="form-label">To</label>
+                    <input type="date" id="dateTo" class="form-control" />
+                </div>
+            </div>
             <hr class="my-4" />
 
             <div class="d-flex justify-content-between align-items-center mb-3">
@@ -73,11 +88,35 @@
                     <tbody id="resultsBody"></tbody>
                 </table>
             </div>
+            <div class="card border-0 shadow-sm mt-4">
+    <div class="card-body">
+        <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+            <div>
+                <label for="chartType" class="form-label mb-1">Chart type</label>
+                <select id="chartType" class="form-select">
+                    <option value="bar">Bar</option>
+                    <option value="line">Line</option>
+                    <option value="pie">Pie</option>
+                </select>
+            </div>
+            <button id="showChart" class="btn btn-outline-primary" type="button">
+                Show chart
+            </button>
+        </div>
+
+        <div id="chartMessage" class="text-secondary small d-none"></div>
+
+        <div style="position: relative; height: 380px;">
+            <canvas id="resultChart"></canvas>
+        </div>
+    </div>
+</div>
         </div>
     </div>
 </div>
 
 @section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
     const datasetSelect = document.getElementById('dataset');
     const dimensionSelect = document.getElementById('dimension');
@@ -89,8 +128,18 @@
     const resultsBody = document.getElementById('resultsBody');
     const addFilterButton = document.getElementById('addFilter');
 const filtersContainer = document.getElementById('filtersContainer');
+const dateFieldSelect = document.getElementById('dateField');
+const dateFromInput = document.getElementById('dateFrom');
+const dateToInput = document.getElementById('dateTo');
+const chartTypeSelect = document.getElementById('chartType');
+const showChartButton = document.getElementById('showChart');
+const chartMessage = document.getElementById('chartMessage');
+const chartCanvas = document.getElementById('resultChart');
+
+let chartInstance = null;
 
 let availableDimensions = [];
+let lastResult = null; // { data, dimensionKey, measureKey }
 
     async function loadMetadata() {
         try {
@@ -120,6 +169,13 @@ let availableDimensions = [];
                 measureSelect.add(option);
             }
 
+            dateFieldSelect.replaceChildren(new Option('(no date range)', ''));
+for (const d of metadata.dimensions) {
+    if (['date', 'datetime'].includes((d.type ?? '').toLowerCase())) {
+        dateFieldSelect.add(new Option(d.label, d.key));
+    }
+}
+
             status.textContent =
                 `Loaded ${metadata.dimensions.length} dimensions and ` +
                 `${metadata.measures.length} measures.`;
@@ -135,6 +191,7 @@ addFilterButton.disabled = availableDimensions.length === 0;
     addFilterButton.disabled = true;
 
     showError('Could not load metadata: ' + error.message);
+
     status.textContent = 'Metadata loading failed.';
         }
     }
@@ -231,7 +288,7 @@ function addFilterRow() {
         status.textContent = 'Running query...';
         resultsHead.replaceChildren();
         resultsBody.replaceChildren();
-
+        lastResult = null;
         try {
 
             const filters = [];
@@ -248,6 +305,20 @@ for (const row of filtersContainer.querySelectorAll('.filter-row')) {
         operator: row.querySelector('.filter-operator').value,
         value: value
     });
+}
+if (dateFieldSelect.value) {
+    const from = dateFromInput.value;
+    const to = dateToInput.value;
+
+    if (from && to && from > to) {
+        throw new Error('"From" date must be on or before "To" date.');
+    }
+    if (from) {
+        filters.push({ dimension: dateFieldSelect.value, operator: 'gte', value: from });
+    }
+    if (to) {
+        filters.push({ dimension: dateFieldSelect.value, operator: 'lt', value: addOneDay(to) });
+    }
 }
             const response = await fetch('/api/dash/query', {
                 method: 'POST',
@@ -277,6 +348,11 @@ sort: measureSelect.value
                 status.textContent = 'No results found.';
                 return;
             }
+            lastResult = {
+    data,
+    dimensionKey: dimensionSelect.value,
+    measureKey: measureSelect.value
+};
 
             const columns = Object.keys(data[0]);
 
@@ -323,6 +399,47 @@ sort: measureSelect.value
         errorBox.textContent = message;
         errorBox.classList.remove('d-none');
     }
+
+    function addOneDay(isoDate) {
+    const d = new Date(isoDate + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+}
+    const PIE_COLORS = ['#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f',
+                    '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac'];
+
+function showChart() {
+    chartMessage.classList.add('d-none');
+
+    if (!lastResult || !lastResult.dimensionKey || !lastResult.measureKey) {
+        chartMessage.textContent =
+            'Run a query with a Group by and a Measure first.';
+        chartMessage.classList.remove('d-none');
+        return;
+    }
+
+    const { data, dimensionKey, measureKey } = lastResult;
+    const type = chartTypeSelect.value;
+
+    chartInstance?.destroy();
+
+    chartInstance = new Chart(chartCanvas, {
+        type: type,
+        data: {
+            labels: data.map(row => String(row[dimensionKey])),
+            datasets: [{
+                label: measureKey,
+                data: data.map(row => Number(row[measureKey])),
+                backgroundColor: type === 'pie'
+                    ? data.map((_, i) => PIE_COLORS[i % PIE_COLORS.length])
+                    : '#4e79a7'
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+}
+
+showChartButton.addEventListener('click', showChart);
 
   
 addFilterButton.addEventListener('click', addFilterRow);

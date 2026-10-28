@@ -3,17 +3,179 @@
   "source": "dbo.vw_SalesMaster",
   "dimensions": [
     {
+      "key": "orderNumber",
+      "column": "OrderNumber",
+      "label": "Order Number",
+      "type": "string"
+    },
+    {
+      "key": "orderDate",
+      "column": "OrderDate",
+      "label": "Order Date",
+      "type": "date"
+    },
+    {
+      "key": "year",
+      "column": "Year",
+      "label": "Year",
+      "type": "number"
+    },
+    {
+      "key": "quarter",
+      "column": "Quarter",
+      "label": "Quarter",
+      "type": "number"
+    },
+    {
+      "key": "yearMonth",
+      "column": "YearMonth",
+      "label": "Year-Month",
+      "type": "string"
+    },
+    {
+      "key": "dayName",
+      "column": "DayName",
+      "label": "Day",
+      "type": "string"
+    },
+    {
+      "key": "channel",
+      "column": "Channel",
+      "label": "Channel",
+      "type": "string"
+    },
+    {
+      "key": "status",
+      "column": "Status",
+      "label": "Status",
+      "type": "string"
+    },
+    {
       "key": "region",
       "column": "Region",
-      "label": "Zone",
+      "label": "Region",
       "type": "string"
+    },
+    {
+      "key": "country",
+      "column": "Country",
+      "label": "Country",
+      "type": "string"
+    },
+    {
+      "key": "state",
+      "column": "State",
+      "label": "State",
+      "type": "string"
+    },
+    {
+      "key": "city",
+      "column": "City",
+      "label": "City",
+      "type": "string"
+    },
+    {
+      "key": "customer",
+      "column": "Customer",
+      "label": "Customer",
+      "type": "string"
+    },
+    {
+      "key": "segment",
+      "column": "Segment",
+      "label": "Customer Segment",
+      "type": "string"
+    },
+    {
+      "key": "product",
+      "column": "Product",
+      "label": "Product",
+      "type": "string"
+    },
+    {
+      "key": "category",
+      "column": "Category",
+      "label": "Category",
+      "type": "string"
+    },
+    {
+      "key": "subCategory",
+      "column": "SubCategory",
+      "label": "Subcategory",
+      "type": "string"
+    },
+    {
+      "key": "brand",
+      "column": "Brand",
+      "label": "Brand",
+      "type": "string"
+    },
+    {
+      "key": "salesperson",
+      "column": "Salesperson",
+      "label": "Salesperson",
+      "type": "string"
+    },
+    {
+      "key": "team",
+      "column": "Team",
+      "label": "Sales Team",
+      "type": "string"
+    },
+    {
+      "key": "orderId",
+      "column": "OrderId",
+      "label": "Order ID",
+      "type": "number"
+    },
+    {
+      "key": "orderLineId",
+      "column": "OrderLineId",
+      "label": "Order Line ID",
+      "type": "number"
     }
   ],
   "measures": [
     {
       "key": "revenue",
-      "label": "Revenue",
+      "label": "Net Revenue",
       "sql": "SUM(NetAmount)",
+      "format": "inr"
+    },
+    {
+      "key": "grossSales",
+      "label": "Gross Sales",
+      "sql": "SUM(GrossAmount)",
+      "format": "inr"
+    },
+    {
+      "key": "discounts",
+      "label": "Discounts",
+      "sql": "SUM(DiscountAmount)",
+      "format": "inr"
+    },
+    {
+      "key": "cost",
+      "label": "Total Cost",
+      "sql": "SUM(CostAmount)",
+      "format": "inr"
+    },
+    {
+      "key": "quantity",
+      "label": "Quantity Sold",
+      "sql": "SUM(Qty)",
+      "format": "number"
+    },
+    {
+      "key": "orderCount",
+      "label": "Order Count",
+      "sql": "COUNT(DISTINCT OrderId)",
+      "format": "number"
+    },
+    {
+      "key": "averageLineValue",
+      "label": "Average Line Value",
+      "sql": "AVG(NetAmount)",
       "format": "inr"
     }
   ]
