@@ -248,6 +248,27 @@
         <tbody id="drilldownBody"></tbody>
     </table>
 </div>
+
+            <div id="drilldownPagination"
+                 class="d-none d-flex justify-content-between align-items-center mt-3">
+
+                <button type="button"
+                        id="drilldownPrevious"
+                        class="btn btn-outline-secondary btn-sm">
+                    &larr; Previous
+                </button>
+
+                <span id="drilldownPageInfo" class="small text-secondary">
+                    Page 1
+                </span>
+
+                <button type="button"
+                        id="drilldownNext"
+                        class="btn btn-outline-primary btn-sm">
+                    Next &rarr;
+                </button>
+
+            </div>
         </div>
     </section>
 </div>
@@ -262,10 +283,14 @@
         const number = value => new Intl.NumberFormat('en-IN').format(Number(value) || 0);
         const pieColors = ['#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f',
             '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac'];
-
         let metadataPromise = null;
+
         let currentDrilldownData = null;
-let visibleDrilldownColumnKeys = new Set();
+        let currentDrilldownState = null;
+
+        let visibleDrilldownColumnKeys = new Set();
+
+        let drilldownRequestId = 0;
 
         const cards = {
             revenue: {
@@ -703,73 +728,249 @@ function setupDrilldownColumns(columns) {
 
     picker.classList.remove('d-none');
 }
+
         async function loadDrilldown(card, selectedValue) {
             const section = document.getElementById('drilldownSection');
             const wrap = document.getElementById('drilldownTableWrap');
             const title = document.getElementById('drilldownTitle');
             const subtitle = document.getElementById('drilldownSubtitle');
-            const head = document.getElementById('drilldownHead');
-            const body = document.getElementById('drilldownBody');
+
+            // Invalidate any previous request.
+            drilldownRequestId++;
+
+            // Start a fresh drilldown and a fresh page cache.
+            currentDrilldownState = {
+                dataset: card.dataset,
+                dimension: card.dimensionKey,
+                value: selectedValue === '(blank)' ? null : selectedValue,
+                displayValue: selectedValue,
+                filters: getAppliedFilters(card),
+                cardId: card.id,
+                page: 1,
+                pages: new Map(),
+                loading: false
+            };
+
+            currentDrilldownData = null;
 
             title.textContent = 'Loading selected records…';
             subtitle.textContent = `${card.dimensionKey} = ${selectedValue}`;
+
             wrap.classList.add('d-none');
-            head.replaceChildren();
-            body.replaceChildren();
+
+            document.getElementById('drilldownColumnPicker')
+                .classList.add('d-none');
+
+            document.getElementById('drilldownPagination')
+                .classList.add('d-none');
+
+            document.getElementById('drilldownHead').replaceChildren();
+            document.getElementById('drilldownBody').replaceChildren();
+
             setDrilldownStatus('Fetching matching records…');
-            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            section.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
+
+            await loadDrilldownPage(1);
+        }
+
+
+        async function loadDrilldownPage(page) {
+            const state = currentDrilldownState;
+
+            if (!state || state.loading) return;
+
+            // Check whether this page has already been fetched.
+            const cachedPage = state.pages.get(page);
+
+            if (cachedPage) {
+                state.page = page;
+                currentDrilldownData = cachedPage;
+
+                renderDrilldownTable();
+                updateDrilldownPagination();
+
+                document.getElementById('drilldownTableWrap')
+                    .classList.remove('d-none');
+
+                setDrilldownStatus(
+                    getDrilldownPageStatus(cachedPage, page)
+                );
+
+                return;
+            }
+
+            state.loading = true;
+
+            const requestId = ++drilldownRequestId;
+
+            updateDrilldownPagination();
+
+            setDrilldownStatus(`Loading page ${page}…`);
 
             try {
                 const response = await fetch('/api/dash/drilldown', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
-                        dataset: card.dataset,
-                        dimension: card.dimensionKey,
-                        value: selectedValue === '(blank)' ? null : selectedValue,
-                        filters: getAppliedFilters(card),
-                        pageSize: 200
+                        dataset: state.dataset,
+                        dimension: state.dimension,
+                        value: state.value,
+                        filters: state.filters,
+                        page: page
                     })
                 });
 
                 const data = await response.json();
-                if (!response.ok) throw new Error(data.error || 'Could not load selected records.');
 
-                title.textContent = 'Selected data';
-                subtitle.textContent = `${card.dimensionKey} = ${selectedValue} · from ${card.id === 'revenue' ? 'Revenue Trend' : 'Revenue by Region'}`;
-               if (!data.columns?.length || !data.rows?.length) {
-    currentDrilldownData = null;
+                if (!response.ok) {
+                    throw new Error(
+                        data.error || 'Could not load selected records.'
+                    );
+                }
 
-    document.getElementById('drilldownColumnPicker')
-        .classList.add('d-none');
+                // Ignore a response belonging to an older chart selection.
+                if (
+                    requestId !== drilldownRequestId ||
+                    state !== currentDrilldownState
+                ) {
+                    return;
+                }
 
-    head.replaceChildren();
-    body.replaceChildren();
+                if (!data.columns?.length || !data.rows?.length) {
+                    currentDrilldownData = null;
 
-    setDrilldownStatus(
-        'No underlying records matched this chart selection.'
-    );
+                    document.getElementById('drilldownColumnPicker')
+                        .classList.add('d-none');
 
-    return;
-}
+                    document.getElementById('drilldownTableWrap')
+                        .classList.add('d-none');
 
-     currentDrilldownData = data;
+                    document.getElementById('drilldownPagination')
+                        .classList.add('d-none');
 
-setupDrilldownColumns(data.columns);
-renderDrilldownTable();
+                    setDrilldownStatus(
+                        'No underlying records matched this chart selection.'
+                    );
 
-wrap.classList.remove('d-none');
+                    return;
+                }
 
-setDrilldownStatus(
-    `Showing ${data.rows.length} matching record${data.rows.length === 1 ? '' : 's'}${
-        data.hasMore ? ' (first 200 rows)' : ''
-    }.`
-);
-            } catch (error) {
-                title.textContent = 'Could not load selected data';
-                setDrilldownStatus(error.message, true);
+                // Store this page in the browser cache.
+                state.pages.set(page, data);
+                state.page = page;
+
+                currentDrilldownData = data;
+
+                // Columns are common to every page.
+                if (page === 1) {
+                    setupDrilldownColumns(data.columns);
+                }
+
+                renderDrilldownTable();
+
+                document.getElementById('drilldownTableWrap')
+                    .classList.remove('d-none');
+
+                updateDrilldownPagination();
+
+                setDrilldownStatus(
+                    getDrilldownPageStatus(data, page)
+                );
+
+                document.getElementById('drilldownTitle')
+                    .textContent = 'Selected data';
+
+                document.getElementById('drilldownSubtitle')
+                    .textContent =
+                    `${state.dimension} = ${state.displayValue} · from ${
+                        state.cardId === 'revenue'
+                            ? 'Revenue Trend'
+                            : 'Revenue by Region'
+                    }`;
+            }
+            catch (error) {
+                if (
+                    requestId === drilldownRequestId &&
+                    state === currentDrilldownState
+                ) {
+                    setDrilldownStatus(error.message, true);
+                }
+            }
+            finally {
+                if (state === currentDrilldownState) {
+                    state.loading = false;
+                    updateDrilldownPagination();
+                }
             }
         }
+
+
+        function getDrilldownPageStatus(data, page) {
+            const start = (page - 1) * 50 + 1;
+            const end = start + data.rows.length - 1;
+
+            return `Showing ${start}–${end} records · Page ${page}${
+                data.hasMore ? ' · more records available' : ''
+            }.`;
+        }
+
+
+        function updateDrilldownPagination() {
+            const pagination =
+                document.getElementById('drilldownPagination');
+
+            const previous =
+                document.getElementById('drilldownPrevious');
+
+            const next =
+                document.getElementById('drilldownNext');
+
+            const pageInfo =
+                document.getElementById('drilldownPageInfo');
+
+            const state = currentDrilldownState;
+
+            if (!state || !currentDrilldownData) {
+                pagination.classList.add('d-none');
+                return;
+            }
+
+            pagination.classList.remove('d-none');
+
+            previous.disabled =
+                state.loading || state.page === 1;
+
+            next.disabled =
+                state.loading || !currentDrilldownData.hasMore;
+
+            pageInfo.textContent = `Page ${state.page}`;
+        }
+
+
+        async function changeDrilldownPage(direction) {
+            const state = currentDrilldownState;
+
+            if (!state || state.loading || !currentDrilldownData) {
+                return;
+            }
+
+            const nextPage = state.page + direction;
+
+            if (nextPage < 1) return;
+
+            if (direction > 0 && !currentDrilldownData.hasMore) {
+                return;
+            }
+
+            await loadDrilldownPage(nextPage);
+        }
+
 
         async function applyCard(card) {
             const button = cardElement(card, '.apply-chart');
@@ -887,6 +1088,15 @@ setDrilldownStatus(
         document.querySelectorAll('.apply-chart').forEach(button => {
             button.addEventListener('click', () => applyCard(cards[button.dataset.card]));
         });
+                document.getElementById('drilldownPrevious')
+            .addEventListener('click', () => {
+                changeDrilldownPage(-1);
+            });
+
+        document.getElementById('drilldownNext')
+            .addEventListener('click', () => {
+                changeDrilldownPage(1);
+            });
 
         loadOverview();
     </script>

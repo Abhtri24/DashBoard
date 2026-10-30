@@ -6,7 +6,7 @@ namespace DashBoard.Services;
 
 public sealed class DashboardDrilldownService
 {
-    private const int MaxPageSize = 200;
+    private const int PageSize = 50;
 
     private readonly SqlConnectionFactory _db;
     private readonly CatalogService _catalog;
@@ -29,79 +29,128 @@ public sealed class DashboardDrilldownService
             _ => throw new ArgumentException($"Unsupported filter operator: {op}")
         };
 
-    public async Task<object> QueryAsync(DashDrilldownRequest request)
-    {
-        ArgumentNullException.ThrowIfNull(request);
 
-        if (string.IsNullOrWhiteSpace(request.Dataset))
-            throw new ArgumentException("Dataset is required.");
-        if (string.IsNullOrWhiteSpace(request.Dimension))
-            throw new ArgumentException("The selected chart dimension is required.");
-        if (request.Filters is null)
-            throw new ArgumentException("Filters cannot be null.");
-        if (request.Filters.Count > 20)
-            throw new ArgumentException("A maximum of 20 filters is allowed.");
-        if (request.PageSize < 1 || request.PageSize > MaxPageSize)
-            throw new ArgumentException($"Page size must be between 1 and {MaxPageSize}.");
+	public async Task<object> QueryAsync(DashDrilldownRequest request)
+	{
+		ArgumentNullException.ThrowIfNull(request);
 
-        var dataset = await _catalog.GetAsync(request.Dataset);
-        var selectedDimension = dataset.Dimension(request.Dimension);
+		if (string.IsNullOrWhiteSpace(request.Dataset))
+			throw new ArgumentException("Dataset is required.");
 
-        // Return the catalog-approved dataset fields, not arbitrary client-supplied SQL.
-        var columns = dataset.Dimensions
-            .Select(d => new { d.Key, d.Label, Sql = $"{d.Column} AS [{d.Key}]" })
-            .Concat(dataset.Measures.Select(m => new
-            {
-                m.Key,
-                m.Label,
-                Sql = $"{m.SourceColumn} AS [{m.Key}]"
-            }))
-            .GroupBy(c => c.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.First())
-            .ToList();
+		if (string.IsNullOrWhiteSpace(request.Dimension))
+			throw new ArgumentException("The selected chart dimension is required.");
 
-        if (columns.Count == 0)
-            throw new ArgumentException("No catalog columns are available for this dataset.");
+		if (request.Filters is null)
+			throw new ArgumentException("Filters cannot be null.");
 
-        var whereParts = new List<string>();
-        var parameters = new DynamicParameters();
-        var parameterIndex = 0;
+		if (request.Filters.Count > 20)
+			throw new ArgumentException("A maximum of 20 filters is allowed.");
 
-        AddFilter(selectedDimension.Key, "eq", request.Value, selectedDimension.Column,
-            whereParts, parameters, ref parameterIndex);
+		if (request.Page < 1 || request.Page > int.MaxValue / PageSize)
+			throw new ArgumentException("Invalid page number.");
 
-        foreach (var filter in request.Filters)
-        {
-            if (filter is null)
-                throw new ArgumentException("A filter cannot be empty.");
+		var dataset = await _catalog.GetAsync(request.Dataset);
+		var selectedDimension = dataset.Dimension(request.Dimension);
 
-            var dimension = dataset.Dimension(filter.Dimension);
-            AddFilter(dimension.Key, filter.Operator, filter.Value, dimension.Column,
-                whereParts, parameters, ref parameterIndex);
-        }
+		// Use the catalog-approved fields for the result.
+		var columns = dataset.Dimensions
+			.Select(d => new
+			{
+				d.Key,
+				d.Label,
+				Sql = $"{d.Column} AS [{d.Key}]"
+			})
+			.Concat(dataset.Measures.Select(m => new
+			{
+				m.Key,
+				m.Label,
+				Sql = $"{m.SourceColumn} AS [{m.Key}]"
+			}))
+			.GroupBy(c => c.Key, StringComparer.OrdinalIgnoreCase)
+			.Select(g => g.First())
+			.ToList();
 
-        parameters.Add("take", request.PageSize + 1);
-        var sql = $"""
-            SELECT TOP (@take) {string.Join(", ", columns.Select(c => c.Sql))}
-            FROM {dataset.Source}
-            WHERE {string.Join(" AND ", whereParts)}
-            ORDER BY {selectedDimension.Column} ASC
-            """;
+		if (columns.Count == 0)
+			throw new ArgumentException("No catalog columns are available.");
 
-        await using var connection = await _db.OpenAsync();
-        var fetched = (await connection.QueryAsync(sql, parameters)).ToList();
-        var hasMore = fetched.Count > request.PageSize;
-        var rows = fetched.Take(request.PageSize).ToList();
+		var whereParts = new List<string>();
+		var parameters = new DynamicParameters();
+		var parameterIndex = 0;
 
-        return new
-        {
-            columns = columns.Select(c => new { c.Key, c.Label }),
-            rows,
-            hasMore
-        };
-    }
+		// Apply the chart selection.
+		AddFilter(
+			selectedDimension.Key,
+			"eq",
+			request.Value,
+			selectedDimension.Column,
+			whereParts,
+			parameters,
+			ref parameterIndex);
 
-    private static void AddFilter(
+		// Apply the remaining chart filters.
+		foreach (var filter in request.Filters)
+		{
+			if (filter is null)
+				throw new ArgumentException("A filter cannot be empty.");
+
+			var dimension = dataset.Dimension(filter.Dimension);
+
+			AddFilter(
+				dimension.Key,
+				filter.Operator,
+				filter.Value,
+				dimension.Column,
+				whereParts,
+				parameters,
+				ref parameterIndex);
+		}
+
+		// Calculate SQL pagination.
+		var offset = (request.Page - 1) * PageSize;
+
+		parameters.Add("offset", offset);
+		parameters.Add("take", PageSize + 1);
+
+		// orderLineId is the unique row-level tie-breaker
+		// in the current sales dataset.
+		var stableSortDimension = dataset.Dimension("orderLineId");
+
+		var orderBy = selectedDimension.Key.Equals(
+			stableSortDimension.Key,
+			StringComparison.OrdinalIgnoreCase)
+			? selectedDimension.Column
+			: $"{selectedDimension.Column} ASC, {stableSortDimension.Column} ASC";
+
+		var sql = $"""
+        SELECT {string.Join(", ", columns.Select(c => c.Sql))}
+        FROM {dataset.Source}
+        WHERE {string.Join(" AND ", whereParts)}
+        ORDER BY {orderBy}
+        OFFSET @offset ROWS
+        FETCH NEXT @take ROWS ONLY
+        """;
+
+		await using var connection = await _db.OpenAsync();
+
+		var fetched = (await connection.QueryAsync(sql, parameters)).ToList();
+
+		// The extra record tells us whether another page exists.
+		var hasMore = fetched.Count > PageSize;
+
+		var rows = fetched.Take(PageSize).ToList();
+
+		return new
+		{
+			columns = columns.Select(c => new { c.Key, c.Label }),
+			rows,
+			page = request.Page,
+			pageSize = PageSize,
+			hasMore
+		};
+	}
+
+
+	private static void AddFilter(
         string dimensionKey,
         string op,
         string? value,
