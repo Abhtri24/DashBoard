@@ -1,5 +1,6 @@
 @page
 @model IndexModel
+<link rel="stylesheet" href="~/css/dashboard.css" asp-append-version="true" />
 @{
     ViewData["Title"] = "Sales Overview";
 }
@@ -8,52 +9,184 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
         <div>
             <h2 class="h4 mb-1">Sales Overview</h2>
-            <p class="text-secondary mb-0">Monitor performance and customize charts without leaving this page.</p>
+            <p class="text-secondary mb-0">Monitor performance and customize your dashboard.</p>
         </div>
+        <button type="button" class="btn btn-primary" id="addDashboardCard">
+            <span aria-hidden="true">+</span> Add Card
+        </button>
     </div>
 
     <div id="overviewError" class="alert alert-danger d-none" role="alert"></div>
 
-    <!-- KPI cards retain their existing overview endpoint and defaults. -->
     <div class="row g-3 mb-4">
         <div class="col-12 col-sm-6 col-xl-3">
-            <div class="card border-0 shadow-sm h-100">
+            <div class="card border-0 shadow-sm h-100" id="totalRevenueCard">
                 <div class="card-body">
-                    <div class="text-secondary small">Total Revenue</div>
-                    <div class="fs-3 fw-semibold mt-2" id="totalRevenue">Loading...</div>
-                    <div class="small text-success mt-2">+8.4% this month</div>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="text-secondary small" id="totalRevenueTitle">Total Revenue</div>
+                            <div class="fs-3 fw-semibold mt-2 kpi-value" id="totalRevenue">Loading...</div>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm edit-chart"
+                                data-card="totalRevenue" aria-expanded="false">Edit</button>
+                    </div>
+                    <div class="small text-success mt-2 kpi-subtitle">+8.4% this month</div>
+                    <div class="kpi-chart d-none mt-2" style="height:220px">
+                        <canvas id="totalRevenueChart"></canvas>
+                    </div>
+                    <div class="kpi-text d-none mt-2" style="white-space: pre-wrap"></div>
+                    <div class="chart-empty alert alert-secondary small d-none mt-2"></div>
                 </div>
             </div>
         </div>
+
         <div class="col-12 col-sm-6 col-xl-3">
-            <div class="card border-0 shadow-sm h-100">
+            <div class="card border-0 shadow-sm h-100" id="totalOrdersCard">
                 <div class="card-body">
-                    <div class="text-secondary small">Total Orders</div>
-                    <div class="fs-3 fw-semibold mt-2" id="totalOrders">Loading...</div>
-                    <div class="small text-success mt-2">+5.2% this month</div>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="text-secondary small" id="totalOrdersTitle">Total Orders</div>
+                            <div class="fs-3 fw-semibold mt-2 kpi-value" id="totalOrders">Loading...</div>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm edit-chart"
+                                data-card="totalOrders" aria-expanded="false">Edit</button>
+                    </div>
+                    <div class="small text-success mt-2 kpi-subtitle">+5.2% this month</div>
+                    <div class="kpi-chart d-none mt-2" style="height:220px">
+                        <canvas id="totalOrdersChart"></canvas>
+                    </div>
+                    <div class="kpi-text d-none mt-2" style="white-space: pre-wrap"></div>
+                    <div class="chart-empty alert alert-secondary small d-none mt-2"></div>
                 </div>
             </div>
         </div>
+
         <div class="col-12 col-sm-6 col-xl-3">
-            <div class="card border-0 shadow-sm h-100">
+            <div class="card border-0 shadow-sm h-100" id="averageOrderValueCard">
                 <div class="card-body">
-                    <div class="text-secondary small">Average Order Value</div>
-                    <div class="fs-3 fw-semibold mt-2" id="averageOrderValue">Loading...</div>
-                    <div class="small text-success mt-2">+2.1% this month</div>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="text-secondary small" id="averageOrderValueTitle">Average Order Value</div>
+                            <div class="fs-3 fw-semibold mt-2 kpi-value" id="averageOrderValue">Loading...</div>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm edit-chart"
+                                data-card="averageOrderValue" aria-expanded="false">Edit</button>
+                    </div>
+                    <div class="small text-success mt-2 kpi-subtitle">+2.1% this month</div>
+                    <div class="kpi-chart d-none mt-2" style="height:220px">
+                        <canvas id="averageOrderValueChart"></canvas>
+                    </div>
+                    <div class="kpi-text d-none mt-2" style="white-space: pre-wrap"></div>
+                    <div class="chart-empty alert alert-secondary small d-none mt-2"></div>
                 </div>
             </div>
         </div>
+
         <div class="col-12 col-sm-6 col-xl-3">
-            <div class="card border-0 shadow-sm h-100">
+            <div class="card border-0 shadow-sm h-100" id="activeRegionsCard">
                 <div class="card-body">
-                    <div class="text-secondary small">Active Regions</div>
-                    <div class="fs-3 fw-semibold mt-2" id="activeRegions">Loading...</div>
-                    <div class="small text-secondary mt-2">Across all sales zones</div>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="text-secondary small" id="activeRegionsTitle">Active Regions</div>
+                            <div class="fs-3 fw-semibold mt-2 kpi-value" id="activeRegions">Loading...</div>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm edit-chart"
+                                data-card="activeRegions" aria-expanded="false">Edit</button>
+                    </div>
+                    <div class="small text-secondary mt-2 kpi-subtitle">Across all sales zones</div>
+                    <div class="kpi-chart d-none mt-2" style="height:220px">
+                        <canvas id="activeRegionsChart"></canvas>
+                    </div>
+                    <div class="kpi-text d-none mt-2" style="white-space: pre-wrap"></div>
+                    <div class="chart-empty alert alert-secondary small d-none mt-2"></div>
                 </div>
             </div>
         </div>
     </div>
 
+    <div id="kpiSharedEditor" class="modal fade" tabindex="-1"
+     aria-labelledby="kpiEditorTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title" id="kpiEditorTitle">Configure card</h5>
+                <button type="button" class="btn-close cancel-chart"
+                        data-card="totalRevenue" aria-label="Close"></button>
+            </div>
+
+            <div class="modal-body">
+
+        <div class="row g-3">
+            <div class="col-12 col-md-4">
+                <label class="form-label" for="kpiContentType">Content type</label>
+                <select id="kpiContentType" class="form-select">
+                    <option value="kpi">KPI / Metric</option>
+                    <option value="chart">Chart</option>
+                    <option value="text">Text</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-8">
+                <label class="form-label" for="kpiTitle">Card title</label>
+                <input id="kpiTitle" class="form-control" maxlength="100">
+            </div>
+
+            <div class="col-12 kpi-query-config">
+                <label class="form-label" for="kpiMeasure">Measure</label>
+                <select id="kpiMeasure" class="form-select chart-measure"></select>
+            </div>
+            <div class="col-12 chart-only">
+                <label class="form-label" for="kpiDimension">Group by</label>
+                <select id="kpiDimension" class="form-select chart-dimension"></select>
+            </div>
+
+            <div class="col-12 col-md-4 kpi-query-config">
+                <label class="form-label" for="kpiDateField">Date range on</label>
+                <select id="kpiDateField" class="form-select chart-date-field"></select>
+            </div>
+            <div class="col-6 col-md-4 kpi-query-config">
+                <label class="form-label" for="kpiDateFrom">From</label>
+                <input type="date" id="kpiDateFrom" class="form-control chart-date-from">
+            </div>
+            <div class="col-6 col-md-4 kpi-query-config">
+                <label class="form-label" for="kpiDateTo">To</label>
+                <input type="date" id="kpiDateTo" class="form-control chart-date-to">
+            </div>
+
+            <div class="col-12 kpi-query-config">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label mb-0">Filters</label>
+                    <button type="button" class="btn btn-outline-primary btn-sm add-chart-filter"
+                            data-card="totalRevenue">+ Add filter</button>
+                </div>
+                <div class="chart-filters d-flex flex-column gap-2"></div>
+            </div>
+
+            <div class="col-12 chart-only">
+                <label class="form-label" for="kpiChartType">Chart type</label>
+                <select id="kpiChartType" class="form-select chart-type">
+                    <option value="line">Line</option>
+                    <option value="bar">Bar</option>
+                    <option value="pie">Pie</option>
+                    <option value="doughnut">Doughnut</option>
+                </select>
+            </div>
+
+            <div class="col-12 text-only">
+                <label class="form-label" for="kpiTextContent">Text content</label>
+                <textarea id="kpiTextContent" class="form-control" rows="4" maxlength="2000"></textarea>
+            </div>
+        </div>
+
+        <div class="alert alert-danger d-none mt-3 chart-editor-error" role="alert"></div>
+        <div class="d-flex justify-content-end gap-2 mt-3">
+            <button type="button" class="btn btn-outline-secondary cancel-chart"
+                    data-card="totalRevenue">Cancel</button>
+            <button type="button" class="btn btn-primary" id="applyKpiCard">Apply changes</button>
+        </div>
+            </div>
+        </div>
+    </div>
+</div>
     <!-- Each chart owns its editor, draft configuration and Chart.js instance. -->
     <div class="row g-3 mb-4">
         <div class="col-12 col-xl-8">
@@ -274,6 +407,7 @@
 </div>
 
 @section Scripts {
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script>
         const money = value => new Intl.NumberFormat('en-IN', {
@@ -292,9 +426,13 @@
 
         let drilldownRequestId = 0;
 
+        let activeKpiCard = null;
+
         const cards = {
             revenue: {
                 id: 'revenue',
+                width: 8,
+                title: 'Revenue Trend',
                 dataset: 'sales',
                 dimensionKey: 'yearMonth',
                 measureKey: 'revenue',
@@ -307,6 +445,8 @@
             },
             region: {
                 id: 'region',
+                width: 4,
+                title: 'Revenue by Region',
                 dataset: 'sales',
                 dimensionKey: 'region',
                 measureKey: 'revenue',
@@ -316,11 +456,262 @@
                 dateFrom: '',
                 dateTo: '',
                 chart: null
+            },
+            totalRevenue: {
+                id: 'totalRevenue',
+                width: 3,
+                isKpi: true,
+                dataset: 'sales',
+                contentType: 'kpi',
+                title: 'Total Revenue',
+                measureKey: 'revenue',
+                dimensionKey: 'yearMonth',
+                chartType: 'bar',
+                filters: [{ dimension: 'status', operator: 'eq', value: 'Completed' }],
+                dateField: 'orderDate',
+                dateFrom: '',
+                dateTo: '',
+                text: '',
+                chart: null
+            },
+            totalOrders: {
+                id: 'totalOrders',
+                width: 3,
+                isKpi: true,
+                dataset: 'sales',
+                contentType: 'kpi',
+                title: 'Total Orders',
+                measureKey: '',
+                dimensionKey: 'yearMonth',
+                chartType: 'bar',
+                filters: [{ dimension: 'status', operator: 'eq', value: 'Completed' }],
+                dateField: 'orderDate',
+                dateFrom: '',
+                dateTo: '',
+                text: '',
+                chart: null
+            },
+            averageOrderValue: {
+                id: 'averageOrderValue',
+                width: 3,
+                isKpi: true,
+                dataset: 'sales',
+                contentType: 'kpi',
+                title: 'Average Order Value',
+                measureKey: '',
+                dimensionKey: 'yearMonth',
+                chartType: 'bar',
+                filters: [{ dimension: 'status', operator: 'eq', value: 'Completed' }],
+                dateField: 'orderDate',
+                dateFrom: '',
+                dateTo: '',
+                text: '',
+                chart: null
+            },
+            activeRegions: {
+                id: 'activeRegions',
+                width: 3,
+                isKpi: true,
+                dataset: 'sales',
+                contentType: 'kpi',
+                title: 'Active Regions',
+                measureKey: '',
+                dimensionKey: 'yearMonth',
+                chartType: 'bar',
+                filters: [{ dimension: 'status', operator: 'eq', value: 'Completed' }],
+                dateField: 'orderDate',
+                dateFrom: '',
+                dateTo: '',
+                text: '',
+                chart: null
             }
         };
 
+        function initializeDashboardGrid() {
+            const grid = document.createElement('div');
+            grid.id = 'dashboardGrid';
+            grid.className = 'dashboard-grid';
+
+            const overviewRow = document.querySelector('.row.g-3.mb-4');
+            const chartRows = [...document.querySelectorAll('.row.g-3.mb-4')];
+            const chartRow = chartRows[1];
+
+            for (const row of [overviewRow, chartRow]) {
+                if (!row) continue;
+                for (const item of [...row.children]) {
+                    const cardRoot = item.querySelector('[id$="Card"]');
+                    if (!cardRoot) continue;
+                    const cardId = cardRoot.id.replace(/Card$/, '');
+                    const card = cards[cardId];
+                    if (!card) continue;
+                    item.classList.remove('col-12', 'col-sm-6', 'col-xl-3', 'col-xl-8', 'col-xl-4');
+                    item.classList.add('dashboard-grid-item', `span-${card.width || 3}`);
+                    grid.appendChild(item);
+                }
+                row.remove();
+            }
+
+            const editor = document.getElementById('kpiSharedEditor');
+            editor.parentNode.insertBefore(grid, editor);
+            // Keep the shared editor as its own full-width panel, never inside a KPI card.
+            grid.after(editor);
+            for (const card of Object.values(cards)) addDeleteControl(card);
+            refreshDashboardLayout();
+        }
+
+
+function refreshDashboardLayout() {
+    const grid = document.getElementById('dashboardGrid');
+    if (!grid) return;
+
+    const items = [...grid.querySelectorAll(':scope > .dashboard-grid-item')];
+
+    const cardItems = items.map(item => {
+        const root = item.querySelector('[id$="Card"]');
+        const id = root?.id.replace(/Card$/, '');
+        return { item, card: cards[id] };
+    }).filter(entry => entry.card);
+
+    // Separate compact cards from charts.
+    const compactItems = cardItems.filter(({ card }) =>
+        card.isKpi && card.contentType !== 'chart'
+    );
+
+    const chartItems = cardItems.filter(({ card }) =>
+        !card.isKpi || card.contentType === 'chart'
+    );
+
+    const compactCount = compactItems.length;
+    const chartCount = chartItems.length;
+
+    // Determine unused space after the compact cards.
+    const compactColumns = (compactCount % 4) * 3;
+    const remainingColumns = compactColumns === 0
+        ? 12
+        : 12 - compactColumns;
+
+    // Assign compact cards their normal width.
+    for (const { item } of compactItems) {
+        item.classList.remove(
+            'span-3', 'span-4', 'span-6', 'span-8', 'span-12'
+        );
+        item.classList.add('span-3');
+        item.classList.remove('is-chart-card');
+    }
+
+    // If charts can use the remaining space beside compact cards,
+    // let the first chart occupy that space.
+    if (chartCount > 0 && compactCount % 4 !== 0 &&
+        remainingColumns >= 6) {
+
+        chartItems.forEach(({ item }, index) => {
+            item.classList.remove(
+                'span-3', 'span-4', 'span-6', 'span-8', 'span-12'
+            );
+
+            item.classList.add(index === 0
+                ? `span-${remainingColumns}`
+                : 'span-12');
+
+            item.classList.add('is-chart-card');
+        });
+
+        return;
+    }
+
+    // Otherwise, place charts in pairs.
+    chartItems.forEach(({ item }, index) => {
+        item.classList.remove(
+            'span-3', 'span-4', 'span-6', 'span-8', 'span-12'
+        );
+
+        const isLastOddChart =
+            chartCount % 2 === 1 && index === chartCount - 1;
+
+        item.classList.add(isLastOddChart ? 'span-12' : 'span-6');
+        item.classList.add('is-chart-card');
+    });
+}
+
+
+        function addDeleteControl(card) {
+            const root = document.getElementById(`${card.id}Card`);
+            if (!root || root.querySelector('.dashboard-card-delete')) return;
+            const header = root.querySelector('.card-body > .d-flex');
+            if (!header) return;
+
+            const actions = document.createElement('div');
+            actions.className = 'dashboard-card-actions d-flex align-items-center gap-2 flex-shrink-0';
+            const editButton = header.querySelector('.edit-chart');
+            if (editButton) actions.appendChild(editButton);
+
+            const removeButton = document.createElement('button');
+            removeButton.type = 'button';
+            removeButton.className = 'btn btn-outline-danger btn-sm dashboard-card-delete';
+            removeButton.setAttribute('aria-label', `Delete ${card.title}`);
+            removeButton.title = 'Delete card';
+            removeButton.innerHTML = '&times;';
+            removeButton.addEventListener('click', () => deleteCard(card.id));
+            actions.appendChild(removeButton);
+            header.appendChild(actions);
+        }
+
+        function createDashboardCardMarkup(card) {
+            const wrapper = document.createElement('div');
+            wrapper.className = `dashboard-grid-item span-${card.width || 3}`;
+            wrapper.innerHTML = `
+                <section class="card border-0 shadow-sm" id="${card.id}Card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                            <div class="text-secondary small" id="${card.id}Title"></div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm edit-chart" data-card="${card.id}" aria-expanded="false">Edit</button>
+                        </div>
+                        <div class="fs-3 fw-semibold mt-2 kpi-value">Configure metric</div>
+                        <div class="small text-secondary mt-2 kpi-subtitle"></div>
+                        <div class="kpi-chart d-none mt-2 dashboard-kpi-chart"><canvas id="${card.id}Chart"></canvas></div>
+                        <div class="kpi-text d-none mt-2" style="white-space: pre-wrap"></div>
+                        <div class="chart-empty alert alert-secondary small d-none mt-2"></div>
+                    </div>
+                </section>`;
+            return wrapper;
+        }
+
+        async function addCard() {
+            const id = `custom${++customCardSequence}`;
+            const card = {
+                id, width: 3, isKpi: true, dataset: 'sales', contentType: 'kpi',
+                title: 'New card', measureKey: '', dimensionKey: 'yearMonth',
+                chartType: 'bar', filters: [], dateField: 'orderDate',
+                dateFrom: '', dateTo: '', text: '', chart: null
+            };
+            cards[id] = card;
+            const wrapper = createDashboardCardMarkup(card);
+            document.getElementById('dashboardGrid').appendChild(wrapper);
+            document.getElementById(`${id}Title`).textContent = card.title;
+            addDeleteControl(card);
+            wrapper.querySelector('.edit-chart').addEventListener('click', () => editCard(card));
+            await editCard(card);
+        }
+
+        function deleteCard(cardId) {
+            const card = cards[cardId];
+            if (!card) return;
+            if (card.chart) card.chart.destroy();
+            if (activeKpiCard === card) closeEditor(card);
+            document.getElementById(`${cardId}Card`)?.closest('.dashboard-grid-item')?.remove();
+            delete cards[cardId];
+            refreshDashboardLayout();
+        }
+
+        let customCardSequence = 0;
+
         function cardElement(card, selector) {
-            return document.querySelector(`#${card.id}Card ${selector}`);
+            const cardControl = document.querySelector(`#${card.id}Card ${selector}`);
+            if (cardControl) return cardControl;
+
+            return card.isKpi
+                ? document.querySelector(`#kpiSharedEditor ${selector}`)
+                : null;
         }
 
         function getMetadata() {
@@ -373,19 +764,55 @@
             const dateDimensions = dimensions.filter(d =>
                 ['date', 'datetime'].includes((d.type || '').toLowerCase()));
 
+            if (card.isKpi && !card.measureKey) {
+                const preferredPattern = {
+                    totalOrders: /order|count/i,
+                    averageOrderValue: /average|avg/i,
+                    activeRegions: /region/i
+                }[card.id];
+
+                const preferredMeasure = preferredPattern
+                    ? measures.find(m => preferredPattern.test(m.label) || preferredPattern.test(m.key))
+                    : null;
+
+                card.measureKey = preferredMeasure?.key || measures[0]?.key || '';
+            }
+
             populateSelect(dimensionSelect, dimensions, card.dimensionKey);
             populateSelect(measureSelect, measures, card.measureKey);
             populateSelect(dateSelect, dateDimensions, card.dateField, '(No date range)');
 
-            cardElement(card, '.chart-date-from').value = card.dateFrom;
-            cardElement(card, '.chart-date-to').value = card.dateTo;
-            cardElement(card, '.chart-type').value = card.chartType;
+            cardElement(card, '.chart-date-from').value = card.dateFrom || '';
+            cardElement(card, '.chart-date-to').value = card.dateTo || '';
+            cardElement(card, '.chart-type').value = card.chartType || 'bar';
 
             const filtersContainer = cardElement(card, '.chart-filters');
             filtersContainer.replaceChildren();
-            for (const filter of card.filters) addFilterRow(card, metadata, filter);
+            for (const filter of (card.filters || [])) {
+                addFilterRow(card, metadata, filter);
+            }
 
             cardElement(card, '.chart-editor-error').classList.add('d-none');
+
+            if (card.isKpi) {
+                document.getElementById('kpiContentType').value = card.contentType || 'kpi';
+                document.getElementById('kpiTitle').value = card.title || '';
+                document.getElementById('kpiTextContent').value = card.text || '';
+                updateKpiEditorFields();
+            }
+        }
+
+        function updateKpiEditorFields() {
+            const type = document.getElementById('kpiContentType').value;
+
+            document.querySelectorAll('#kpiSharedEditor .kpi-query-config')
+                .forEach(element => element.classList.toggle('d-none', type === 'text'));
+
+            document.querySelectorAll('#kpiSharedEditor .chart-only')
+                .forEach(element => element.classList.toggle('d-none', type !== 'chart'));
+
+            document.querySelectorAll('#kpiSharedEditor .text-only')
+                .forEach(element => element.classList.toggle('d-none', type !== 'text'));
         }
 
         function addFilterRow(card, metadata, initial = null) {
@@ -466,32 +893,77 @@
             }
         }
 
-        function openEditor(card) {
-            const editor = document.getElementById(`${card.id}Editor`);
-            editor.classList.remove('d-none');
-            cardElement(card, '.edit-chart').setAttribute('aria-expanded', 'true');
-            cardElement(card, '.edit-chart').innerHTML = '<span aria-hidden="true">✎</span> Editing';
-        }
+function openEditor(card) {
+    const editor = card.isKpi
+        ? document.getElementById('kpiSharedEditor')
+        : document.getElementById(`${card.id}Editor`);
 
-        function closeEditor(card) {
-            document.getElementById(`${card.id}Editor`).classList.add('d-none');
-            cardElement(card, '.edit-chart').setAttribute('aria-expanded', 'false');
-            cardElement(card, '.edit-chart').innerHTML = '<span aria-hidden="true">✎</span> Edit';
-        }
+    if (card.isKpi) {
+        bootstrap.Modal.getOrCreateInstance(editor).show();
+    } else {
+        editor.classList.remove('d-none');
+    }
 
-        async function editCard(card) {
-            const button = cardElement(card, '.edit-chart');
-            button.disabled = true;
-            try {
-                const metadata = await getMetadata();
-                setupEditor(card, metadata);
-                openEditor(card);
-            } catch (error) {
-                showCardError(card, error.message);
-            } finally {
-                button.disabled = false;
-            }
+    cardElement(card, '.edit-chart')
+        .setAttribute('aria-expanded', 'true');
+}
+
+function closeEditor(card) {
+    if (!card) return;
+
+    const editor = card.isKpi
+        ? document.getElementById('kpiSharedEditor')
+        : document.getElementById(`${card.id}Editor`);
+
+    if (card.isKpi) {
+        bootstrap.Modal.getOrCreateInstance(editor).hide();
+    } else {
+        editor.classList.add('d-none');
+    }
+
+    cardElement(card, '.edit-chart')
+        .setAttribute('aria-expanded', 'false');
+
+    if (card.isKpi && activeKpiCard === card) {
+        activeKpiCard = null;
+    }
+}
+
+async function editCard(card) {
+    if (!card) return;
+
+    const button = cardElement(card, '.edit-chart');
+    button.disabled = true;
+
+   if (card.isKpi) {
+    activeKpiCard = card;
+
+    const editor = document.getElementById('kpiSharedEditor');
+    editor.dataset.card = card.id;
+
+        editor.querySelectorAll('.cancel-chart, .add-chart-filter')
+            .forEach(control => control.dataset.card = card.id);
+
+        openEditor(card);
+    }
+
+    try {
+        const metadata = await getMetadata();
+        setupEditor(card, metadata);
+        openEditor(card);
+    } catch (error) {
+        if (card.isKpi) {
+            const editor = document.getElementById('kpiSharedEditor');
+            const errorBox = editor.querySelector('.chart-editor-error');
+            errorBox.textContent = error.message;
+            errorBox.classList.remove('d-none');
+        } else {
+            showCardError(card, error.message);
         }
+    } finally {
+        button.disabled = false;
+    }
+}
 
         function showCardError(card, message) {
             const error = cardElement(card, '.chart-editor-error');
@@ -617,6 +1089,54 @@
                 emptyMessage.textContent = 'No results matched this configuration.';
                 emptyMessage.classList.remove('d-none');
             }
+        }
+
+        function setKpiContentVisible(card, type) {
+            const root = document.getElementById(`${card.id}Card`);
+
+            root.querySelector('.kpi-value').classList.toggle('d-none', type !== 'kpi');
+            root.querySelector('.kpi-chart').classList.toggle('d-none', type !== 'chart');
+            root.querySelector('.kpi-text').classList.toggle('d-none', type !== 'text');
+            root.querySelector('.kpi-subtitle').classList.toggle('d-none', type === 'text');
+
+            const emptyMessage = root.querySelector('.chart-empty');
+            if (type !== 'chart') emptyMessage.classList.add('d-none');
+
+            if (type !== 'chart' && card.chart) {
+                card.chart.destroy();
+                card.chart = null;
+            }
+        }
+
+        function renderKpiMetric(card, value, measure) {
+            const root = document.getElementById(`${card.id}Card`);
+
+            document.getElementById(`${card.id}Title`).textContent = card.title;
+            root.querySelector('.kpi-value').textContent = formatMeasure(value, measure);
+            root.querySelector('.kpi-subtitle').textContent = measure.label;
+
+            setKpiContentVisible(card, 'kpi');
+        }
+
+        function renderKpiText(card) {
+            const root = document.getElementById(`${card.id}Card`);
+
+            document.getElementById(`${card.id}Title`).textContent = card.title;
+            root.querySelector('.kpi-text').textContent = card.text;
+
+            setKpiContentVisible(card, 'text');
+        }
+
+        function renderKpiChart(card, labels, values, measure, dimension, chartType) {
+            const root = document.getElementById(`${card.id}Card`);
+
+            document.getElementById(`${card.id}Title`).textContent = card.title;
+            root.querySelector('.kpi-subtitle').textContent =
+                `${measure.label} grouped by ${dimension.label}`;
+
+            // Make the canvas visible before Chart.js measures its dimensions.
+            setKpiContentVisible(card, 'chart');
+            renderChart(card, labels, values, measure, chartType);
         }
 
         function getAppliedFilters(card) {
@@ -754,7 +1274,7 @@ function setupDrilldownColumns(columns) {
             currentDrilldownData = null;
 
             title.textContent = 'Loading selected records…';
-            subtitle.textContent = `${card.dimensionKey} = ${selectedValue}`;
+            subtitle.textContent = `${card.dimensionKey} = ${selectedValue} · from ${card.title || card.id}`;
 
             wrap.classList.add('d-none');
 
@@ -889,9 +1409,7 @@ function setupDrilldownColumns(columns) {
                 document.getElementById('drilldownSubtitle')
                     .textContent =
                     `${state.dimension} = ${state.displayValue} · from ${
-                        state.cardId === 'revenue'
-                            ? 'Revenue Trend'
-                            : 'Revenue by Region'
+                        cards[state.cardId]?.title || state.cardId
                     }`;
             }
             catch (error) {
@@ -972,6 +1490,131 @@ function setupDrilldownColumns(columns) {
         }
 
 
+        async function applyKpiCard(card) {
+            const button = document.getElementById('applyKpiCard');
+            const error = cardElement(card, '.chart-editor-error');
+            const originalText = button.textContent;
+
+            error.classList.add('d-none');
+            button.disabled = true;
+            button.textContent = 'Loading...';
+
+            try {
+                const metadata = await getMetadata();
+                const contentType = document.getElementById('kpiContentType').value;
+                const title = document.getElementById('kpiTitle').value.trim();
+
+                if (!title) throw new Error('Enter a card title.');
+
+                if (contentType === 'text') {
+                    const text = document.getElementById('kpiTextContent').value;
+                    if (!text.trim()) throw new Error('Enter the text to display.');
+
+                    card.contentType = 'text';
+                    card.title = title;
+                    card.text = text;
+
+                    renderKpiText(card);
+                    closeEditor(card);
+                    return;
+                }
+
+                const measureKey = cardElement(card, '.chart-measure').value;
+                const measure = getMeasure(metadata, measureKey);
+                if (!measure) throw new Error('Choose a valid measure.');
+
+                const dimensionKey = cardElement(card, '.chart-dimension').value;
+                const chartType = cardElement(card, '.chart-type').value;
+                const dateField = cardElement(card, '.chart-date-field').value;
+                const dateFrom = cardElement(card, '.chart-date-from').value;
+                const dateTo = cardElement(card, '.chart-date-to').value;
+
+                let dimension = null;
+                if (contentType === 'chart') {
+                    dimension = getDimension(metadata, dimensionKey);
+                    if (!dimension) throw new Error('Choose a valid group-by dimension.');
+                }
+
+                if (dateFrom && dateTo && dateFrom > dateTo) {
+                    throw new Error('"From" date must be on or before "To" date.');
+                }
+
+                const customFilters = [];
+                for (const row of cardElement(card, '.chart-filters')
+                    .querySelectorAll('.chart-filter-row')) {
+                    const value = row.querySelector('.filter-value').value.trim();
+                    if (!value) {
+                        throw new Error('Enter a value for every filter or remove the empty filter.');
+                    }
+
+                    customFilters.push({
+                        dimension: row.querySelector('.filter-field').value,
+                        operator: row.querySelector('.filter-operator').value,
+                        value
+                    });
+                }
+
+                const draft = { dateField, dateFrom, dateTo };
+                const filters = buildQueryFilters(card, draft);
+
+                const response = await fetch('/api/dash/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dataset: card.dataset,
+                        dimensions: contentType === 'chart' ? [dimensionKey] : [],
+                        measures: [measureKey],
+                        filters,
+                        sort: contentType === 'chart'
+                            ? [{ field: measureKey, direction: 'desc' }]
+                            : [],
+                        page: 1,
+                        pageSize: contentType === 'chart' ? 200 : 1
+                    })
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'The card query failed.');
+                }
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    throw new Error('No data matched this configuration.');
+                }
+
+                // Commit the configuration only after the query succeeds.
+                Object.assign(card, {
+                    contentType,
+                    title,
+                    measureKey,
+                    dimensionKey,
+                    chartType,
+                    filters: customFilters,
+                    dateField,
+                    dateFrom,
+                    dateTo
+                });
+
+                if (contentType === 'kpi') {
+                    renderKpiMetric(card, data[0][measureKey], measure);
+                } else {
+                    const labels = data.map(row => row[dimensionKey] == null
+                        ? '(blank)' : String(row[dimensionKey]));
+                    const values = data.map(row => Number(row[measureKey]) || 0);
+
+                    renderKpiChart(card, labels, values, measure, dimension, chartType);
+                }
+
+                refreshDashboardLayout();
+                closeEditor(card);
+            } catch (error) {
+                showCardError(card, error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+
         async function applyCard(card) {
             const button = cardElement(card, '.apply-chart');
             const error = cardElement(card, '.chart-editor-error');
@@ -1016,8 +1659,8 @@ function setupDrilldownColumns(columns) {
                 card.dateFrom = draft.dateFrom;
                 card.dateTo = draft.dateTo;
 
-                document.getElementById(`${card.id}Title`).textContent =
-                    `${measure.label} by ${dimension.label}`;
+                card.title = `${measure.label} by ${dimension.label}`;
+                document.getElementById(`${card.id}Title`).textContent = card.title;
                 document.getElementById(`${card.id}Subtitle`).textContent =
                     `${data.length} grouped result${data.length === 1 ? '' : 's'}`;
 
@@ -1062,20 +1705,44 @@ function setupDrilldownColumns(columns) {
             }
         }
 
+        initializeDashboardGrid();
+
+        document.getElementById('kpiSharedEditor')
+            .addEventListener('hidden.bs.modal', () => {
+                if (activeKpiCard) {
+                    cardElement(activeKpiCard, '.edit-chart')
+                        ?.setAttribute('aria-expanded', 'false');
+                    activeKpiCard = null;
+                }
+            });
+
+        document.getElementById('addDashboardCard')
+            .addEventListener('click', addCard);
+
         document.querySelectorAll('.edit-chart').forEach(button => {
             button.addEventListener('click', () => editCard(cards[button.dataset.card]));
         });
 
         document.querySelectorAll('.cancel-chart').forEach(button => {
             button.addEventListener('click', () => {
-                const card = cards[button.dataset.card];
-                closeEditor(card);
+                const isSharedEditor = button.closest('#kpiSharedEditor');
+                const card = isSharedEditor
+                    ? activeKpiCard
+                    : cards[button.dataset.card];
+
+                if (card) closeEditor(card);
             });
         });
 
         document.querySelectorAll('.add-chart-filter').forEach(button => {
             button.addEventListener('click', async () => {
-                const card = cards[button.dataset.card];
+                const isSharedEditor = button.closest('#kpiSharedEditor');
+                const card = isSharedEditor
+                    ? activeKpiCard
+                    : cards[button.dataset.card];
+
+                if (!card) return;
+
                 try {
                     const metadata = await getMetadata();
                     addFilterRow(card, metadata);
@@ -1088,7 +1755,16 @@ function setupDrilldownColumns(columns) {
         document.querySelectorAll('.apply-chart').forEach(button => {
             button.addEventListener('click', () => applyCard(cards[button.dataset.card]));
         });
-                document.getElementById('drilldownPrevious')
+
+        document.getElementById('kpiContentType')
+            .addEventListener('change', updateKpiEditorFields);
+
+        document.getElementById('applyKpiCard')
+            .addEventListener('click', () => {
+                if (activeKpiCard) applyKpiCard(activeKpiCard);
+            });
+
+        document.getElementById('drilldownPrevious')
             .addEventListener('click', () => {
                 changeDrilldownPage(-1);
             });
