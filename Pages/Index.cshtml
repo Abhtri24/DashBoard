@@ -1,4 +1,3 @@
-﻿
 @page
 @model IndexModel
 @{
@@ -9,28 +8,23 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
         <div>
             <h2 class="h4 mb-1">Sales Overview</h2>
-            <p class="text-secondary mb-0">
-                Monitor performance and explore your sales data.
-            </p>
+            <p class="text-secondary mb-0">Monitor performance and customize charts without leaving this page.</p>
         </div>
-
-        <button type="button" class="btn btn-primary"
-                onclick="window.location.href='/QueryBuilder'">
-            + Build a Query
-        </button>
     </div>
 
-    <!-- KPI cards -->
+    <div id="overviewError" class="alert alert-danger d-none" role="alert"></div>
+
+    <!-- KPI cards retain their existing overview endpoint and defaults. -->
     <div class="row g-3 mb-4">
         <div class="col-12 col-sm-6 col-xl-3">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
                     <div class="text-secondary small">Total Revenue</div>
-<div class="fs-3 fw-semibold mt-2" id="totalRevenue">Loading...</div>                    <div class="small text-success mt-2">+8.4% this month</div>
+                    <div class="fs-3 fw-semibold mt-2" id="totalRevenue">Loading...</div>
+                    <div class="small text-success mt-2">+8.4% this month</div>
                 </div>
             </div>
         </div>
-
         <div class="col-12 col-sm-6 col-xl-3">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
@@ -40,7 +34,6 @@
                 </div>
             </div>
         </div>
-
         <div class="col-12 col-sm-6 col-xl-3">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
@@ -50,7 +43,6 @@
                 </div>
             </div>
         </div>
-
         <div class="col-12 col-sm-6 col-xl-3">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
@@ -62,258 +54,840 @@
         </div>
     </div>
 
-    <!-- Charts -->
+    <!-- Each chart owns its editor, draft configuration and Chart.js instance. -->
     <div class="row g-3 mb-4">
         <div class="col-12 col-xl-8">
-            <div class="card border-0 shadow-sm h-100">
+            <section class="card border-0 shadow-sm h-100 dashboard-chart-card" id="revenueCard">
                 <div class="card-body">
-                    <h3 class="h6 mb-1">Revenue Trend</h3>
-                    <p class="text-secondary small mb-3">
-                        Monthly revenue
-                    </p>
-                    <div style="height: 300px;">
-                        <canvas id="revenueChart"
-                                aria-label="Monthly revenue chart"
-                                role="img"></canvas>
+                    <div class="d-flex justify-content-between align-items-start gap-3 mb-1">
+                        <div>
+                            <h3 class="h6 mb-1" id="revenueTitle">Revenue Trend</h3>
+                            <p class="text-secondary small mb-0" id="revenueSubtitle">Monthly revenue</p>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm edit-chart"
+                                data-card="revenue" aria-expanded="false">
+                            <span aria-hidden="true">✎</span> Edit
+                        </button>
+                    </div>
+
+                    <div class="chart-editor d-none border rounded-3 p-3 my-3" id="revenueEditor">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h4 class="h6 mb-0">Edit chart</h4>
+                            <button type="button" class="btn-close cancel-chart" data-card="revenue"
+                                    aria-label="Cancel editing"></button>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="revenueDimension">Group by</label>
+                                <select id="revenueDimension" class="form-select chart-dimension"></select>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="revenueMeasure">Measure</label>
+                                <select id="revenueMeasure" class="form-select chart-measure"></select>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="revenueDateField">Date range on</label>
+                                <select id="revenueDateField" class="form-select chart-date-field"></select>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <label class="form-label" for="revenueDateFrom">From</label>
+                                <input type="date" id="revenueDateFrom" class="form-control chart-date-from" />
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <label class="form-label" for="revenueDateTo">To</label>
+                                <input type="date" id="revenueDateTo" class="form-control chart-date-to" />
+                            </div>
+                            <div class="col-12">
+                                <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                                    <div>
+                                        <label class="form-label mb-0">Filters</label>
+                                        <div class="text-secondary small">Add any available dataset dimension as a condition.</div>
+                                    </div>
+                                    <button type="button" class="btn btn-outline-primary btn-sm add-chart-filter"
+                                            data-card="revenue">+ Add filter</button>
+                                </div>
+                                <div class="chart-filters d-flex flex-column gap-2" id="revenueFilters"></div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="revenueChartType">Chart type</label>
+                                <select id="revenueChartType" class="form-select chart-type">
+                                    <option value="line">Line</option>
+                                    <option value="bar">Bar</option>
+                                    <option value="pie">Pie</option>
+                                    <option value="doughnut">Doughnut</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="alert alert-danger d-none mt-3 mb-0 chart-editor-error" role="alert"></div>
+                        <div class="d-flex justify-content-end gap-2 mt-3">
+                            <button type="button" class="btn btn-outline-secondary cancel-chart"
+                                    data-card="revenue">Cancel</button>
+                            <button type="button" class="btn btn-primary apply-chart" data-card="revenue">
+                                Apply changes
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-secondary small d-none chart-empty mt-3" role="status"></div>
+                    <div style="position: relative; height: 300px;">
+                        <canvas id="revenueChart" aria-label="Customizable revenue trend chart" role="img"></canvas>
                     </div>
                 </div>
-            </div>
+            </section>
         </div>
 
         <div class="col-12 col-xl-4">
-            <div class="card border-0 shadow-sm h-100">
+            <section class="card border-0 shadow-sm h-100 dashboard-chart-card" id="regionCard">
                 <div class="card-body">
-                    <h3 class="h6 mb-1">Revenue by Region</h3>
-                    <p class="text-secondary small mb-3">
-                        Select a region to explore its transactions.
-                    </p>
-                    <div style="height: 300px;">
-                        <canvas id="regionChart"
-                                aria-label="Revenue by region chart"
-                                role="img"></canvas>
+                    <div class="d-flex justify-content-between align-items-start gap-3 mb-1">
+                        <div>
+                            <h3 class="h6 mb-1" id="regionTitle">Revenue by Region</h3>
+                            <p class="text-secondary small mb-0" id="regionSubtitle">Completed sales by region</p>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm edit-chart"
+                                data-card="region" aria-expanded="false">
+                            <span aria-hidden="true">✎</span> Edit
+                        </button>
+                    </div>
+
+                    <div class="chart-editor d-none border rounded-3 p-3 my-3" id="regionEditor">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h4 class="h6 mb-0">Edit chart</h4>
+                            <button type="button" class="btn-close cancel-chart" data-card="region"
+                                    aria-label="Cancel editing"></button>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label" for="regionDimension">Group by</label>
+                                <select id="regionDimension" class="form-select chart-dimension"></select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="regionMeasure">Measure</label>
+                                <select id="regionMeasure" class="form-select chart-measure"></select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="regionDateField">Date range on</label>
+                                <select id="regionDateField" class="form-select chart-date-field"></select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label" for="regionDateFrom">From</label>
+                                <input type="date" id="regionDateFrom" class="form-control chart-date-from" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label" for="regionDateTo">To</label>
+                                <input type="date" id="regionDateTo" class="form-control chart-date-to" />
+                            </div>
+                            <div class="col-12">
+                                <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                                    <div>
+                                        <label class="form-label mb-0">Filters</label>
+                                        <div class="text-secondary small">Use any available dataset dimension.</div>
+                                    </div>
+                                    <button type="button" class="btn btn-outline-primary btn-sm add-chart-filter"
+                                            data-card="region">+ Add filter</button>
+                                </div>
+                                <div class="chart-filters d-flex flex-column gap-2" id="regionFilters"></div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="regionChartType">Chart type</label>
+                                <select id="regionChartType" class="form-select chart-type">
+                                    <option value="line">Line</option>
+                                    <option value="bar">Bar</option>
+                                    <option value="pie">Pie</option>
+                                    <option value="doughnut">Doughnut</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="alert alert-danger d-none mt-3 mb-0 chart-editor-error" role="alert"></div>
+                        <div class="d-flex justify-content-end gap-2 mt-3">
+                            <button type="button" class="btn btn-outline-secondary cancel-chart"
+                                    data-card="region">Cancel</button>
+                            <button type="button" class="btn btn-primary apply-chart" data-card="region">
+                                Apply changes
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-secondary small d-none chart-empty mt-3" role="status"></div>
+                    <div style="position: relative; height: 300px;">
+                        <canvas id="regionChart" aria-label="Customizable regional sales chart" role="img"></canvas>
                     </div>
                 </div>
-            </div>
+            </section>
         </div>
     </div>
 
-    <!-- Recent transactions -->
-    <div class="card border-0 shadow-sm">
+    <!-- This area is populated on demand when a chart point or segment is selected. -->
+    <section class="card border-0 shadow-sm" id="drilldownSection" aria-live="polite">
         <div class="card-body">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-                <div>
-                    <h3 class="h6 mb-1">Recent Transactions</h3>
-                    <p class="text-secondary small mb-0">
-                        Latest sales activity
-                    </p>
-                </div>
-                <button type="button" class="btn btn-outline-secondary btn-sm"
-                        id="viewTransactions">
-                    View all
-                </button>
+            <div class="mb-3">
+                <h3 class="h6 mb-1" id="drilldownTitle">Explore chart data</h3>
+                <p class="text-secondary small mb-0" id="drilldownSubtitle">
+                    Click a point or segment in any chart to load its underlying records here.
+                </p>
             </div>
+            <div id="drilldownStatus" class="text-secondary small" role="status">
+                No selection yet.
+            </div>
+<details id="drilldownColumnPicker" class="mb-3 d-none">
+    <summary class="btn btn-sm btn-outline-secondary">
+        Choose columns
+    </summary>
 
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Order ID</th>
-                            <th>Date</th>
-                            <th>Region</th>
-                            <th class="text-end">Amount</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>#ORD-1001</td>
-                            <td>26 Oct 2026</td>
-                            <td>North</td>
-                            <td class="text-end">₹18,500</td>
-                            <td><span class="badge text-bg-success">Completed</span></td>
-                        </tr>
-                        <tr>
-                            <td>#ORD-1002</td>
-                            <td>25 Oct 2026</td>
-                            <td>South</td>
-                            <td class="text-end">₹12,200</td>
-                            <td><span class="badge text-bg-success">Completed</span></td>
-                        </tr>
-                        <tr>
-                            <td>#ORD-1003</td>
-                            <td>25 Oct 2026</td>
-                            <td>West</td>
-                            <td class="text-end">₹9,750</td>
-                            <td><span class="badge text-bg-warning">Pending</span></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+    <div id="drilldownColumnOptions"
+         class="border rounded p-3 mt-2">
     </div>
+</details>
+            <div id="drilldownTableWrap"
+     class="table-responsive d-none mt-3 drilldown-table-wrap">
+    <table class="table table-hover table-sm align-middle mb-0 drilldown-table"
+           id="drilldownTable">
+        <thead class="table-light">
+            <tr id="drilldownHead"></tr>
+        </thead>
+        <tbody id="drilldownBody"></tbody>
+    </table>
+</div>
+        </div>
+    </section>
 </div>
 
-
 @section Scripts {
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script>
-        const money = value =>
-            new Intl.NumberFormat('en-IN', {
-                style: 'currency',
-                currency: 'INR',
-                maximumFractionDigits: 0
-            }).format(value);
+        const money = value => new Intl.NumberFormat('en-IN', {
+            style: 'currency', currency: 'INR', maximumFractionDigits: 0
+        }).format(Number(value) || 0);
 
-        const number = value =>
-            new Intl.NumberFormat('en-IN').format(value);
+        const number = value => new Intl.NumberFormat('en-IN').format(Number(value) || 0);
+        const pieColors = ['#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f',
+            '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac'];
+
+        let metadataPromise = null;
+        let currentDrilldownData = null;
+let visibleDrilldownColumnKeys = new Set();
+
+        const cards = {
+            revenue: {
+                id: 'revenue',
+                dataset: 'sales',
+                dimensionKey: 'yearMonth',
+                measureKey: 'revenue',
+                chartType: 'line',
+                filters: [{ dimension: 'status', operator: 'eq', value: 'Completed' }],
+                dateField: 'orderDate',
+                dateFrom: '',
+                dateTo: '',
+                chart: null
+            },
+            region: {
+                id: 'region',
+                dataset: 'sales',
+                dimensionKey: 'region',
+                measureKey: 'revenue',
+                chartType: 'doughnut',
+                filters: [{ dimension: 'status', operator: 'eq', value: 'Completed' }],
+                dateField: 'orderDate',
+                dateFrom: '',
+                dateTo: '',
+                chart: null
+            }
+        };
+
+        function cardElement(card, selector) {
+            return document.querySelector(`#${card.id}Card ${selector}`);
+        }
+
+        function getMetadata() {
+            if (!metadataPromise) {
+                metadataPromise = fetch('/api/dash/meta/datasets?dataset=sales')
+                    .then(async response => {
+                        const metadata = await response.json();
+                        if (!response.ok) throw new Error(metadata.error || 'Could not load dataset metadata.');
+                        return metadata;
+                    })
+                    .catch(error => {
+                        metadataPromise = null;
+                        throw error;
+                    });
+            }
+            return metadataPromise;
+        }
+
+        function addOneDay(isoDate) {
+            const date = new Date(isoDate + 'T00:00:00Z');
+            date.setUTCDate(date.getUTCDate() + 1);
+            return date.toISOString().slice(0, 10);
+        }
+
+        function getDimension(metadata, key) {
+            return (metadata.dimensions || []).find(item => item.key === key);
+        }
+
+        function getMeasure(metadata, key) {
+            return (metadata.measures || []).find(item => item.key === key);
+        }
+
+        function populateSelect(select, items, selectedKey, emptyLabel) {
+            select.replaceChildren();
+            if (emptyLabel) select.add(new Option(emptyLabel, ''));
+            for (const item of items) select.add(new Option(item.label, item.key));
+            if ([...select.options].some(option => option.value === selectedKey)) {
+                select.value = selectedKey;
+            } else if (select.options.length) {
+                select.selectedIndex = emptyLabel ? 0 : 0;
+            }
+        }
+
+        function setupEditor(card, metadata) {
+            const dimensions = metadata.dimensions || [];
+            const measures = metadata.measures || [];
+            const dimensionSelect = cardElement(card, '.chart-dimension');
+            const measureSelect = cardElement(card, '.chart-measure');
+            const dateSelect = cardElement(card, '.chart-date-field');
+            const dateDimensions = dimensions.filter(d =>
+                ['date', 'datetime'].includes((d.type || '').toLowerCase()));
+
+            populateSelect(dimensionSelect, dimensions, card.dimensionKey);
+            populateSelect(measureSelect, measures, card.measureKey);
+            populateSelect(dateSelect, dateDimensions, card.dateField, '(No date range)');
+
+            cardElement(card, '.chart-date-from').value = card.dateFrom;
+            cardElement(card, '.chart-date-to').value = card.dateTo;
+            cardElement(card, '.chart-type').value = card.chartType;
+
+            const filtersContainer = cardElement(card, '.chart-filters');
+            filtersContainer.replaceChildren();
+            for (const filter of card.filters) addFilterRow(card, metadata, filter);
+
+            cardElement(card, '.chart-editor-error').classList.add('d-none');
+        }
+
+        function addFilterRow(card, metadata, initial = null) {
+            const dimensions = metadata.dimensions || [];
+            if (!dimensions.length) return;
+
+            const row = document.createElement('div');
+            row.className = 'row g-2 align-items-center chart-filter-row';
+
+            const field = document.createElement('select');
+            field.className = 'form-select filter-field';
+            for (const dimension of dimensions) field.add(new Option(dimension.label, dimension.key));
+
+            const operator = document.createElement('select');
+            operator.className = 'form-select filter-operator';
+
+            const value = document.createElement('input');
+            value.className = 'form-control filter-value';
+            value.placeholder = 'Value';
+            value.required = true;
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn btn-outline-secondary w-100';
+            remove.textContent = 'Remove';
+            remove.addEventListener('click', () => row.remove());
+
+            function updateOperators() {
+                const dimension = getDimension(metadata, field.value);
+                const type = (dimension?.type || 'string').toLowerCase();
+                const operators = ['eq', 'neq'];
+                if (['number', 'numeric', 'integer', 'decimal', 'date', 'datetime'].includes(type)) {
+                    operators.push('gt', 'gte', 'lt', 'lte');
+                }
+                const labels = {
+                    eq: 'Equals', neq: 'Does not equal', gt: 'Greater than',
+                    gte: 'At least', lt: 'Less than', lte: 'At most'
+                };
+                operator.replaceChildren();
+                for (const op of operators) operator.add(new Option(labels[op], op));
+
+                value.type = type === 'date' ? 'date' :
+                    ['number', 'numeric', 'integer', 'decimal'].includes(type) ? 'number' : 'text';
+                if (value.type === 'number') value.step = 'any';
+                else value.removeAttribute('step');
+
+                if (initial && initial.dimension === field.value &&
+                    operators.includes(initial.operator)) {
+                    operator.value = initial.operator;
+                }
+            }
+
+            field.addEventListener('change', updateOperators);
+
+            const fieldCol = document.createElement('div');
+            fieldCol.className = 'col-12 col-md-4';
+            fieldCol.append(field);
+            const operatorCol = document.createElement('div');
+            operatorCol.className = 'col-7 col-md-3';
+            operatorCol.append(operator);
+            const valueCol = document.createElement('div');
+            valueCol.className = 'col-5 col-md-3';
+            valueCol.append(value);
+            const removeCol = document.createElement('div');
+            removeCol.className = 'col-12 col-md-2';
+            removeCol.append(remove);
+
+            row.append(fieldCol, operatorCol, valueCol, removeCol);
+            cardElement(card, '.chart-filters').append(row);
+
+            if (initial && dimensions.some(d => d.key === initial.dimension)) {
+                field.value = initial.dimension;
+            }
+            updateOperators();
+            if (initial) {
+                operator.value = initial.operator;
+                value.value = initial.value ?? '';
+            }
+        }
+
+        function openEditor(card) {
+            const editor = document.getElementById(`${card.id}Editor`);
+            editor.classList.remove('d-none');
+            cardElement(card, '.edit-chart').setAttribute('aria-expanded', 'true');
+            cardElement(card, '.edit-chart').innerHTML = '<span aria-hidden="true">✎</span> Editing';
+        }
+
+        function closeEditor(card) {
+            document.getElementById(`${card.id}Editor`).classList.add('d-none');
+            cardElement(card, '.edit-chart').setAttribute('aria-expanded', 'false');
+            cardElement(card, '.edit-chart').innerHTML = '<span aria-hidden="true">✎</span> Edit';
+        }
+
+        async function editCard(card) {
+            const button = cardElement(card, '.edit-chart');
+            button.disabled = true;
+            try {
+                const metadata = await getMetadata();
+                setupEditor(card, metadata);
+                openEditor(card);
+            } catch (error) {
+                showCardError(card, error.message);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        function showCardError(card, message) {
+            const error = cardElement(card, '.chart-editor-error');
+            error.textContent = message;
+            error.classList.remove('d-none');
+        }
+
+        function collectDraft(card, metadata) {
+            const dimensionKey = cardElement(card, '.chart-dimension').value;
+            const measureKey = cardElement(card, '.chart-measure').value;
+            if (!dimensionKey || !measureKey) {
+                throw new Error('Choose both a dimension and a measure.');
+            }
+            if (!getDimension(metadata, dimensionKey) || !getMeasure(metadata, measureKey)) {
+                throw new Error('The selected dimension or measure is not available in the dataset.');
+            }
+
+            const customFilters = [];
+            for (const row of cardElement(card, '.chart-filters').querySelectorAll('.chart-filter-row')) {
+                const value = row.querySelector('.filter-value').value.trim();
+                if (!value) throw new Error('Enter a value for every filter or remove the empty filter.');
+                customFilters.push({
+                    dimension: row.querySelector('.filter-field').value,
+                    operator: row.querySelector('.filter-operator').value,
+                    value
+                });
+            }
+
+            const dateField = cardElement(card, '.chart-date-field').value;
+            const dateFrom = cardElement(card, '.chart-date-from').value;
+            const dateTo = cardElement(card, '.chart-date-to').value;
+            if (dateFrom && dateTo && dateFrom > dateTo) {
+                throw new Error('"From" date must be on or before "To" date.');
+            }
+
+            return {
+                dimensionKey,
+                measureKey,
+                chartType: cardElement(card, '.chart-type').value,
+                dateField,
+                dateFrom,
+                dateTo,
+                filters: customFilters
+            };
+        }
+
+        function buildQueryFilters(card, draft) {
+            const filters = [];
+            for (const row of cardElement(card, '.chart-filters').querySelectorAll('.chart-filter-row')) {
+                filters.push({
+                    dimension: row.querySelector('.filter-field').value,
+                    operator: row.querySelector('.filter-operator').value,
+                    value: row.querySelector('.filter-value').value.trim()
+                });
+            }
+            if (draft.dateField && draft.dateFrom) {
+                filters.push({ dimension: draft.dateField, operator: 'gte', value: draft.dateFrom });
+            }
+            if (draft.dateField && draft.dateTo) {
+                filters.push({ dimension: draft.dateField, operator: 'lt', value: addOneDay(draft.dateTo) });
+            }
+            return filters;
+        }
+
+        function formatMeasure(value, measure) {
+            if ((measure?.format || '').toLowerCase().includes('inr') ||
+                (measure?.format || '').toLowerCase().includes('currency')) {
+                return money(value);
+            }
+            return number(value);
+        }
+
+        function renderChart(card, labels, values, measure, chartType) {
+            const canvas = document.getElementById(`${card.id}Chart`);
+            const isCircular = chartType === 'pie' || chartType === 'doughnut';
+            const colors = labels.map((_, index) => pieColors[index % pieColors.length]);
+            const dataset = {
+                label: measure.label,
+                data: values,
+                backgroundColor: isCircular ? colors : '#0d6efd',
+                borderColor: chartType === 'line' ? '#0d6efd' : undefined,
+                fill: chartType === 'line',
+                tension: chartType === 'line' ? 0.3 : undefined,
+                borderWidth: isCircular ? 0 : 1
+            };
+
+            if (card.chart) card.chart.destroy();
+
+            card.chart = new Chart(canvas, {
+                type: chartType,
+                data: { labels, datasets: [dataset] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    onClick: async (_event, elements) => {
+                        if (!elements.length) return;
+                        const index = elements[0].index;
+                        const selectedValue = labels[index];
+                        await loadDrilldown(card, selectedValue);
+                    },
+                    plugins: {
+                        legend: { display: isCircular, position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: context => `${context.label}: ${formatMeasure(context.raw, measure)}`
+                            }
+                        }
+                    },
+                    scales: isCircular ? {} : {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: value => formatMeasure(value, measure) }
+                        }
+                    }
+                }
+            });
+
+            canvas.style.cursor = 'pointer';
+            const emptyMessage = cardElement(card, '.chart-empty');
+            if (labels.length) {
+                emptyMessage.classList.add('d-none');
+            } else {
+                emptyMessage.textContent = 'No results matched this configuration.';
+                emptyMessage.classList.remove('d-none');
+            }
+        }
+
+        function getAppliedFilters(card) {
+            const filters = (card.filters || []).map(filter => ({ ...filter }));
+            if (card.dateField && card.dateFrom) {
+                filters.push({ dimension: card.dateField, operator: 'gte', value: card.dateFrom });
+            }
+            if (card.dateField && card.dateTo) {
+                filters.push({ dimension: card.dateField, operator: 'lt', value: addOneDay(card.dateTo) });
+            }
+            return filters;
+        }
+
+        function setDrilldownStatus(message, isError = false) {
+            const status = document.getElementById('drilldownStatus');
+            status.textContent = message;
+            status.classList.toggle('text-danger', isError);
+            status.classList.toggle('text-secondary', !isError);
+        }
+
+        function formatCellValue(value) {
+            if (value === null || value === undefined) return '';
+            if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+                const date = new Date(value);
+                if (!Number.isNaN(date.getTime())) return date.toLocaleString('en-IN');
+            }
+            if (typeof value === 'number') return number(value);
+            return String(value);
+        }
+
+        function renderDrilldownTable() {
+    if (!currentDrilldownData) return;
+
+    const { columns, rows } = currentDrilldownData;
+    const head = document.getElementById('drilldownHead');
+    const body = document.getElementById('drilldownBody');
+
+    head.replaceChildren();
+    body.replaceChildren();
+
+    const visibleColumns = columns.filter(column =>
+        visibleDrilldownColumnKeys.has(column.key)
+    );
+
+    for (const column of visibleColumns) {
+        const th = document.createElement('th');
+        th.textContent = column.label;
+        th.title = column.label;
+        th.scope = 'col';
+        head.appendChild(th);
+    }
+
+    for (const row of rows) {
+        const tr = document.createElement('tr');
+
+        for (const column of visibleColumns) {
+            const td = document.createElement('td');
+            const value = formatCellValue(row[column.key]);
+
+            td.textContent = value;
+            td.title = value;
+            tr.appendChild(td);
+        }
+
+        body.appendChild(tr);
+    }
+}
+
+function setupDrilldownColumns(columns) {
+    const picker = document.getElementById('drilldownColumnPicker');
+    const options = document.getElementById('drilldownColumnOptions');
+
+    options.replaceChildren();
+  visibleDrilldownColumnKeys = new Set(
+    columns.slice(0, 7).map(column => column.key)
+);
+
+    for (const column of columns) {
+        const label = document.createElement('label');
+        label.className = 'form-check d-flex align-items-center gap-2';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'form-check-input mt-0';
+        checkbox.checked = visibleDrilldownColumnKeys.has(column.key);
+
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) {
+                visibleDrilldownColumnKeys.add(column.key);
+            } else {
+                // Keep at least one column visible.
+                if (visibleDrilldownColumnKeys.size === 1) {
+                    checkbox.checked = true;
+                    return;
+                }
+
+                visibleDrilldownColumnKeys.delete(column.key);
+            }
+
+            renderDrilldownTable();
+        });
+
+        const text = document.createElement('span');
+        text.textContent = column.label;
+
+        label.append(checkbox, text);
+        options.appendChild(label);
+    }
+
+    picker.classList.remove('d-none');
+}
+        async function loadDrilldown(card, selectedValue) {
+            const section = document.getElementById('drilldownSection');
+            const wrap = document.getElementById('drilldownTableWrap');
+            const title = document.getElementById('drilldownTitle');
+            const subtitle = document.getElementById('drilldownSubtitle');
+            const head = document.getElementById('drilldownHead');
+            const body = document.getElementById('drilldownBody');
+
+            title.textContent = 'Loading selected records…';
+            subtitle.textContent = `${card.dimensionKey} = ${selectedValue}`;
+            wrap.classList.add('d-none');
+            head.replaceChildren();
+            body.replaceChildren();
+            setDrilldownStatus('Fetching matching records…');
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            try {
+                const response = await fetch('/api/dash/drilldown', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dataset: card.dataset,
+                        dimension: card.dimensionKey,
+                        value: selectedValue === '(blank)' ? null : selectedValue,
+                        filters: getAppliedFilters(card),
+                        pageSize: 200
+                    })
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Could not load selected records.');
+
+                title.textContent = 'Selected data';
+                subtitle.textContent = `${card.dimensionKey} = ${selectedValue} · from ${card.id === 'revenue' ? 'Revenue Trend' : 'Revenue by Region'}`;
+               if (!data.columns?.length || !data.rows?.length) {
+    currentDrilldownData = null;
+
+    document.getElementById('drilldownColumnPicker')
+        .classList.add('d-none');
+
+    head.replaceChildren();
+    body.replaceChildren();
+
+    setDrilldownStatus(
+        'No underlying records matched this chart selection.'
+    );
+
+    return;
+}
+
+     currentDrilldownData = data;
+
+setupDrilldownColumns(data.columns);
+renderDrilldownTable();
+
+wrap.classList.remove('d-none');
+
+setDrilldownStatus(
+    `Showing ${data.rows.length} matching record${data.rows.length === 1 ? '' : 's'}${
+        data.hasMore ? ' (first 200 rows)' : ''
+    }.`
+);
+            } catch (error) {
+                title.textContent = 'Could not load selected data';
+                setDrilldownStatus(error.message, true);
+            }
+        }
+
+        async function applyCard(card) {
+            const button = cardElement(card, '.apply-chart');
+            const error = cardElement(card, '.chart-editor-error');
+            error.classList.add('d-none');
+            button.disabled = true;
+            const originalText = button.textContent;
+            button.textContent = 'Loading...';
+
+            try {
+                const metadata = await getMetadata();
+                const draft = collectDraft(card, metadata);
+                const filters = buildQueryFilters(card, draft);
+
+                const response = await fetch('/api/dash/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dataset: card.dataset,
+                        dimensions: [draft.dimensionKey],
+                        measures: [draft.measureKey],
+                        filters,
+                        sort: [{ field: draft.measureKey, direction: 'desc' }],
+                        page: 1,
+                        pageSize: 200
+                    })
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'The chart query failed.');
+
+                const dimension = getDimension(metadata, draft.dimensionKey);
+                const measure = getMeasure(metadata, draft.measureKey);
+                const labels = data.map(row => row[draft.dimensionKey] == null
+                    ? '(blank)' : String(row[draft.dimensionKey]));
+                const values = data.map(row => Number(row[draft.measureKey]) || 0);
+
+                card.dimensionKey = draft.dimensionKey;
+                card.measureKey = draft.measureKey;
+                card.chartType = draft.chartType;
+                card.filters = draft.filters;
+                card.dateField = draft.dateField;
+                card.dateFrom = draft.dateFrom;
+                card.dateTo = draft.dateTo;
+
+                document.getElementById(`${card.id}Title`).textContent =
+                    `${measure.label} by ${dimension.label}`;
+                document.getElementById(`${card.id}Subtitle`).textContent =
+                    `${data.length} grouped result${data.length === 1 ? '' : 's'}`;
+
+                renderChart(card, labels, values, measure, draft.chartType);
+                closeEditor(card);
+            } catch (error) {
+                showCardError(card, error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
 
         async function loadOverview() {
             try {
                 const response = await fetch('/api/dash/overview');
-
-                if (!response.ok) {
-                    throw new Error(`Overview request failed: ${response.status}`);
-                }
-
+                if (!response.ok) throw new Error(`Overview request failed: ${response.status}`);
                 const data = await response.json();
 
-                // KPI cards
-                document.getElementById('totalRevenue').textContent =
-                    money(data.kpis.totalRevenue);
+                document.getElementById('totalRevenue').textContent = money(data.kpis.totalRevenue);
+                document.getElementById('totalOrders').textContent = number(data.kpis.totalOrders);
+                document.getElementById('averageOrderValue').textContent = money(data.kpis.averageOrderValue);
+                document.getElementById('activeRegions').textContent = number(data.kpis.activeRegions);
 
-                document.getElementById('totalOrders').textContent =
-                    number(data.kpis.totalOrders);
+                const revenue = cards.revenue;
+                const regions = cards.region;
+                renderChart(revenue,
+                    data.monthlyRevenue.map(row => String(row.Month)),
+                    data.monthlyRevenue.map(row => Number(row.Revenue)),
+                    { label: 'Revenue', format: 'inr' }, 'line');
+                renderChart(regions,
+                    data.regionalRevenue.map(row => String(row.Region)),
+                    data.regionalRevenue.map(row => Number(row.Revenue)),
+                    { label: 'Revenue', format: 'inr' }, 'doughnut');
 
-                document.getElementById('averageOrderValue').textContent =
-                    money(data.kpis.averageOrderValue);
-
-                document.getElementById('activeRegions').textContent =
-                    number(data.kpis.activeRegions);
-
-                // Monthly revenue chart
-                new Chart(document.getElementById('revenueChart'), {
-                    type: 'line',
-                    data: {
-                        labels: data.monthlyRevenue.map(x => x.Month),
-                        datasets: [{
-                            label: 'Revenue',
-                            data: data.monthlyRevenue.map(x => Number(x.Revenue)),
-                            borderColor: '#0d6efd',
-                            backgroundColor: 'rgba(13, 110, 253, 0.10)',
-                            fill: true,
-                            tension: 0.3
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        interaction: { intersect: false, mode: 'index' },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                ticks: {
-                                    callback: value =>
-                                        '₹' + number(value / 1000000) + 'M'
-                                }
-                            }
-                        }
-                    }
-                });
-
-                // Regional revenue chart
-                const regions = data.regionalRevenue;
-
-                const regionChart = new Chart(
-                    document.getElementById('regionChart'), {
-                        type: 'doughnut',
-                        data: {
-                            labels: regions.map(x => x.Region),
-                            datasets: [{
-                                data: regions.map(x => Number(x.Revenue)),
-                                backgroundColor: [
-                                    '#0d6efd', '#198754', '#ffc107', '#6f42c1'
-                                ],
-                                borderWidth: 0
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: { position: 'bottom' },
-                                tooltip: {
-                                    callbacks: {
-                                        label: context =>
-                                            `${context.label}: ${money(context.raw)}`
-                                    }
-                                }
-                            },
-                            onClick: (_, elements) => {
-                                if (elements.length) {
-                                    const region =
-                                        regionChart.data.labels[elements[0].index];
-
-                                    window.location.href =
-                                        '/QueryBuilder?region=' +
-                                        encodeURIComponent(region);
-                                }
-                            }
-                        }
-                    }
-                );
-
-                // Recent transactions
-                const tbody = document.querySelector(
-                    '.table-responsive tbody');
-
-                tbody.replaceChildren();
-
-                for (const row of data.recentTransactions) {
-                    const tr = document.createElement('tr');
-
-                    const values = [
-                        row.OrderNumber,
-                        new Date(row.OrderDate).toLocaleDateString('en-IN'),
-                        row.Region,
-                        money(row.Amount)
-                    ];
-
-                    for (const [index, value] of values.entries()) {
-                        const td = document.createElement('td');
-                        td.textContent = value;
-
-                        if (index === 3) td.className = 'text-end';
-
-                        tr.appendChild(td);
-                    }
-
-                    const statusCell = document.createElement('td');
-                    const badge = document.createElement('span');
-                    badge.className = 'badge ' +
-                        (row.Status === 'Completed'
-                            ? 'text-bg-success'
-                            : row.Status === 'Returned'
-                                ? 'text-bg-warning'
-                                : 'text-bg-secondary');
-
-                    badge.textContent = row.Status;
-                    statusCell.appendChild(badge);
-                    tr.appendChild(statusCell);
-
-                    tbody.appendChild(tr);
-                }
 
             } catch (error) {
+                const box = document.getElementById('overviewError');
+                box.textContent = 'Could not load the dashboard overview: ' + error.message;
+                box.classList.remove('d-none');
                 console.error('Failed to load dashboard overview:', error);
             }
         }
 
-        document.getElementById('viewTransactions')
-            .addEventListener('click', () => {
-                window.location.href = '/Transactions';
+        document.querySelectorAll('.edit-chart').forEach(button => {
+            button.addEventListener('click', () => editCard(cards[button.dataset.card]));
+        });
+
+        document.querySelectorAll('.cancel-chart').forEach(button => {
+            button.addEventListener('click', () => {
+                const card = cards[button.dataset.card];
+                closeEditor(card);
             });
+        });
+
+        document.querySelectorAll('.add-chart-filter').forEach(button => {
+            button.addEventListener('click', async () => {
+                const card = cards[button.dataset.card];
+                try {
+                    const metadata = await getMetadata();
+                    addFilterRow(card, metadata);
+                } catch (error) {
+                    showCardError(card, error.message);
+                }
+            });
+        });
+
+        document.querySelectorAll('.apply-chart').forEach(button => {
+            button.addEventListener('click', () => applyCard(cards[button.dataset.card]));
+        });
 
         loadOverview();
     </script>
 }
-

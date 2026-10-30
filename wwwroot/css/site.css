@@ -1,31 +1,122 @@
 html {
-  font-size: 14px;
+    font-size: 14px;
+    position: relative;
+    min-height: 100%;
 }
 
 @media (min-width: 768px) {
-  html {
-    font-size: 16px;
-  }
+    html {
+        font-size: 16px;
+    }
 }
 
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
-}
-
-html {
-  position: relative;
-  min-height: 100%;
+.btn:focus,
+.btn:active:focus,
+.btn-link.nav-link:focus,
+.form-control:focus,
+.form-check-input:focus {
+    box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
 }
 
 body {
-  margin-bottom: 60px;
+    margin-bottom: 60px;
 }
 
-.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
-  color: var(--bs-secondary-color);
-  text-align: end;
+/* Floating form placeholders */
+.form-floating > .form-control-plaintext::placeholder,
+.form-floating > .form-control::placeholder {
+    color: var(--bs-secondary-color);
+    text-align: end;
 }
 
-.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
-  text-align: start;
+.form-floating > .form-control-plaintext:focus::placeholder,
+.form-floating > .form-control:focus::placeholder {
+    text-align: start;
 }
+
+/* Keep the dashboard within the browser viewport. */
+main,
+.container-fluid {
+    min-width: 0;
+    max-width: 100%;
+}
+
+/* Drill-down results card */
+#drilldownSection {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+    #drilldownSection .card-body {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+/* The table scrolls independently of the page. */
+#drilldownTableWrap {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    max-height: 65vh;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Fit the visible columns to the available width. */
+#drilldownTable {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+    border-collapse: collapse;
+    margin-bottom: 0;
+}
+
+    #drilldownTable th,
+    #drilldownTable td {
+        padding: 10px 12px;
+        vertical-align: middle;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Keep column headings readable and visible while scrolling. */
+    #drilldownTable th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #f8f9fa;
+        font-size: 0.82rem;
+        font-weight: 600;
+    }
+
+    #drilldownTable td {
+        font-size: 0.88rem;
+    }
+
+/* Column chooser */
+#drilldownColumnPicker {
+    max-width: 100%;
+}
+
+    #drilldownColumnPicker summary {
+        cursor: pointer;
+    }
+
+#drilldownColumnOptions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    max-width: 100%;
+}
+
+    #drilldownColumnOptions label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9rem;
+        cursor: pointer;
+    }
