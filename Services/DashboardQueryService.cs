@@ -174,6 +174,17 @@ namespace DashBoard.Services
     FETCH NEXT @pageSize ROWS ONLY
     """;
 
+			Console.WriteLine("\n========== DASHBOARD SQL ==========");
+			Console.WriteLine(sql);
+			Console.WriteLine("========== SQL PARAMETERS ==========");
+
+			foreach (var name in parameters.ParameterNames)
+			{
+				Console.WriteLine($"{name} = {parameters.Get<object>(name)}");
+			}
+
+			Console.WriteLine("====================================\n");
+
 			// 10. Execute the query.
 			await using var connection = await _db.OpenAsync();
 

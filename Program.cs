@@ -10,10 +10,17 @@ builder.Services.AddControllers();
 builder.Services.AddSingleton<SqlConnectionFactory>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<DashboardDrilldownService>();
-builder.Services.AddSingleton<CatalogService>(); builder.Services.AddScoped<DashboardOverviewService>();
+builder.Services.AddSingleton<CatalogService>();
+builder.Services.AddScoped<DashboardOverviewService>();
+builder.Services.AddScoped<DatabaseSchemaDiscoveryService>();
+builder.Services.AddScoped<DatabaseRelationshipService>();
+builder.Services.AddScoped<DatabaseAggregationSafetyService>();
+builder.Services.AddScoped<AggregationQueryValidator>();
+builder.Services.AddScoped<AutomaticJoinPlannerService>();
 builder.Services.AddScoped<DashboardQueryService>();
 
 var app = builder.Build();
+
 
 
 // Configure the HTTP request pipeline.
