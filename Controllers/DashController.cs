@@ -24,6 +24,10 @@ public class DashController : ControllerBase
 	private readonly AggregationQueryValidator _queryValidator;
 
 	private readonly AutomaticJoinPlannerService _joinPlanner;
+
+	private readonly AggregationSqlGenerator _sqlGenerator;
+
+	private readonly AggregationQueryExecutionService _executionService;
 	public DashController(
 		SqlConnectionFactory db,
 		CatalogService catalog,
@@ -34,7 +38,9 @@ public class DashController : ControllerBase
 		DatabaseRelationshipService relationshipService,
 		DatabaseAggregationSafetyService aggregationSafetyService,
 		AggregationQueryValidator queryValidator,
-		AutomaticJoinPlannerService joinPlanner
+		AutomaticJoinPlannerService joinPlanner,
+		AggregationSqlGenerator sqlGenerator,
+		AggregationQueryExecutionService executionService
 		)
 	{
 		_db = db;
@@ -47,6 +53,192 @@ public class DashController : ControllerBase
 		_aggregationSafetyService = aggregationSafetyService;
 		_queryValidator = queryValidator;
 		_joinPlanner = joinPlanner;
+		_sqlGenerator = sqlGenerator;
+		_executionService = executionService;
+	}
+
+	[HttpPost("execute-query")]
+	public async Task<IActionResult> ExecuteQuery(
+	[FromBody] AggregationQueryPlan plan,
+	CancellationToken cancellationToken)
+	{
+		var schema = await _schemaDiscovery.DiscoverAsync(
+			null,
+			cancellationToken);
+
+		var graph = await _relationshipService.BuildGraphAsync(
+			null,
+			cancellationToken);
+
+		var joinPlan = _joinPlanner.Plan(
+			graph,
+			plan.Tables);
+
+		if (!joinPlan.IsValid)
+		{
+			return BadRequest(new
+			{
+				isValid = false,
+				errors = joinPlan.Errors
+			});
+		}
+
+		var validationPlan = new AggregationQueryPlan
+		{
+			Tables = joinPlan.Tables,
+
+			Joins = joinPlan.Joins.Select(j => new AggregationJoin
+			{
+				LeftAlias = j.LeftAlias,
+				RightAlias = j.RightAlias,
+				ConstraintName = j.ConstraintName
+			}).ToList(),
+
+			Dimensions = plan.Dimensions,
+			Measures = plan.Measures,
+			Filters = plan.Filters,
+			Sort = plan.Sort,
+			Page = plan.Page,
+			PageSize = plan.PageSize
+		};
+
+		var errors = _queryValidator.Validate(
+			validationPlan,
+			schema);
+
+		if (errors.Count > 0)
+		{
+			return BadRequest(new
+			{
+				isValid = false,
+				errors
+			});
+		}
+
+		var safety = _aggregationSafetyService.Analyze(
+			graph,
+			validationPlan);
+
+		if (!safety.IsSafe)
+		{
+			return BadRequest(new
+			{
+				isValid = false,
+				message = "The query may produce incorrect aggregations.",
+				safety
+			});
+		}
+
+		var generated = _sqlGenerator.Generate(
+			plan,
+			joinPlan,
+			schema);
+
+		var rows = await _executionService.ExecuteAsync(
+			generated,
+			cancellationToken);
+
+		return Ok(new
+		{
+			isValid = true,
+			rowCount = rows.Count(),
+			rows
+		});
+	}
+
+
+	[HttpPost("generate-sql")]
+	public async Task<IActionResult> GenerateSql(
+	[FromBody] AggregationQueryPlan plan,
+	CancellationToken cancellationToken)
+	{
+		// Discover the actual database schema.
+		var schema = await _schemaDiscovery.DiscoverAsync(
+			null,
+			cancellationToken);
+
+		// Build the relationship graph.
+		var graph = await _relationshipService.BuildGraphAsync(
+			null,
+			cancellationToken);
+
+		// Automatically resolve the joins.
+		var joinPlan = _joinPlanner.Plan(
+			graph,
+			plan.Tables);
+
+		if (!joinPlan.IsValid)
+		{
+			return BadRequest(new
+			{
+				isValid = false,
+				errors = joinPlan.Errors
+			});
+		}
+
+		// Create a validation plan containing the resolved tables and joins.
+		var validationPlan = new AggregationQueryPlan
+		{
+			Tables = joinPlan.Tables,
+
+			Joins = joinPlan.Joins.Select(j => new AggregationJoin
+			{
+				LeftAlias = j.LeftAlias,
+				RightAlias = j.RightAlias,
+				ConstraintName = j.ConstraintName
+			}).ToList(),
+
+			Dimensions = plan.Dimensions,
+			Measures = plan.Measures,
+			Filters = plan.Filters,
+			Sort = plan.Sort,
+			Page = plan.Page,
+			PageSize = plan.PageSize
+		};
+
+		// Validate tables, columns, fields and pagination.
+		var errors = _queryValidator.Validate(
+			validationPlan,
+			schema);
+
+		if (errors.Count > 0)
+		{
+			return BadRequest(new
+			{
+				isValid = false,
+				errors
+			});
+		}
+
+		// Check aggregation safety using the resolved join relationships.
+		var safety = _aggregationSafetyService.Analyze(
+			graph,
+			validationPlan);
+
+		if (!safety.IsSafe)
+		{
+			return BadRequest(new
+			{
+				isValid = false,
+				message = "The query may produce incorrect aggregations.",
+				safety
+			});
+		}
+
+		// Generate SQL without executing it.
+		var generated = _sqlGenerator.Generate(
+			plan,
+			joinPlan,
+			schema);
+
+		return Ok(new
+		{
+			isValid = true,
+			joinPlan,
+			safety,
+			generated.Sql,
+			generated.Parameters
+		});
 	}
 
 	[HttpPost("plan-joins")]

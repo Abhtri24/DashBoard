@@ -16,7 +16,9 @@ builder.Services.AddScoped<DatabaseSchemaDiscoveryService>();
 builder.Services.AddScoped<DatabaseRelationshipService>();
 builder.Services.AddScoped<DatabaseAggregationSafetyService>();
 builder.Services.AddScoped<AggregationQueryValidator>();
+builder.Services.AddScoped<AggregationSqlGenerator>();
 builder.Services.AddScoped<AutomaticJoinPlannerService>();
+builder.Services.AddScoped<AggregationQueryExecutionService>();
 builder.Services.AddScoped<DashboardQueryService>();
 
 var app = builder.Build();
