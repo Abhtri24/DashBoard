@@ -1,4 +1,6 @@
-﻿using System.Text;
+﻿
+using System.Text;
+using System.Globalization;
 using DashBoard.Models;
 
 namespace DashBoard.Services;
@@ -90,12 +92,6 @@ public sealed class AggregationSqlGenerator
 		// Measures
 		foreach (var measure in query.Measures)
 		{
-			ValidateSourceColumn(
-				joinPlan,
-				schema,
-				measure.SourceAlias,
-				measure.Column);
-
 			if (string.IsNullOrWhiteSpace(measure.Key) ||
 				!outputKeys.Add(measure.Key))
 			{
@@ -103,17 +99,42 @@ public sealed class AggregationSqlGenerator
 					$"Invalid or duplicate output key '{measure.Key}'.");
 			}
 
-			var aggregation = measure.Aggregation.Trim().ToUpperInvariant();
+			// Resolve either a physical column or a calculated expression.
+			string measureExpression;
+
+			if (measure.Expression != null)
+			{
+				measureExpression = BuildExpression(
+					measure.Expression,
+					joinPlan,
+					schema);
+			}
+			else
+			{
+				ValidateSourceColumn(
+					joinPlan,
+					schema,
+					measure.SourceAlias,
+					measure.Column);
+
+				measureExpression = ColumnReference(
+					measure.SourceAlias,
+					measure.Column);
+			}
+
+			var aggregation = measure.Aggregation
+				.Trim()
+				.ToUpperInvariant();
 
 			var expression = aggregation switch
 			{
-				"SUM" => $"SUM({ColumnReference(measure.SourceAlias, measure.Column)})",
-				"AVG" => $"AVG({ColumnReference(measure.SourceAlias, measure.Column)})",
-				"MIN" => $"MIN({ColumnReference(measure.SourceAlias, measure.Column)})",
-				"MAX" => $"MAX({ColumnReference(measure.SourceAlias, measure.Column)})",
-				"COUNT" => $"COUNT({ColumnReference(measure.SourceAlias, measure.Column)})",
+				"SUM" => $"SUM({measureExpression})",
+				"AVG" => $"AVG({measureExpression})",
+				"MIN" => $"MIN({measureExpression})",
+				"MAX" => $"MAX({measureExpression})",
+				"COUNT" => $"COUNT({measureExpression})",
 				"COUNT_DISTINCT" =>
-					$"COUNT(DISTINCT {ColumnReference(measure.SourceAlias, measure.Column)})",
+					$"COUNT(DISTINCT {measureExpression})",
 
 				_ => throw new InvalidOperationException(
 					$"Unsupported aggregation '{measure.Aggregation}'.")
@@ -250,6 +271,7 @@ public sealed class AggregationSqlGenerator
 				case "lte":
 					{
 						var parameter = $"@p{parameterIndex++}";
+
 						var sqlOperator = operation switch
 						{
 							"eq" => "=",
@@ -295,8 +317,10 @@ public sealed class AggregationSqlGenerator
 				case "in":
 					{
 						var values = (filter.Value ?? "")
-							.Split(',', StringSplitOptions.TrimEntries |
-										 StringSplitOptions.RemoveEmptyEntries);
+							.Split(
+								',',
+								StringSplitOptions.TrimEntries |
+								StringSplitOptions.RemoveEmptyEntries);
 
 						if (values.Length == 0)
 						{
@@ -393,6 +417,72 @@ public sealed class AggregationSqlGenerator
 			Sql = sql.ToString(),
 			Parameters = parameters
 		};
+	}
+
+	// Converts a restricted expression tree into SQL.
+	// Only validated columns, numeric literals and approved operators
+	// are allowed. Raw SQL fragments are never accepted.
+	private static string BuildExpression(
+		AggregationExpression expression,
+		AutomaticJoinPlan joinPlan,
+		DatabaseSchema schema)
+	{
+		switch (expression.Type.ToUpperInvariant())
+		{
+			case "COLUMN":
+				ValidateSourceColumn(
+					joinPlan,
+					schema,
+					expression.SourceAlias,
+					expression.Column);
+
+				return ColumnReference(
+					expression.SourceAlias,
+					expression.Column);
+
+			case "VALUE":
+				if (!expression.Value.HasValue)
+				{
+					throw new InvalidOperationException(
+						"Expression numeric value is missing.");
+				}
+
+				return expression.Value.Value.ToString(
+					CultureInfo.InvariantCulture);
+
+			case "MULTIPLY":
+			case "ADD":
+			case "SUBTRACT":
+			case "DIVIDE":
+				{
+					if (expression.Operands.Count < 2)
+					{
+						throw new InvalidOperationException(
+							$"Expression '{expression.Type}' needs at least two operands.");
+					}
+
+					var operands = expression.Operands
+						.Select(operand =>
+							BuildExpression(operand, joinPlan, schema))
+						.ToList();
+
+					var sqlOperator = expression.Type.ToUpperInvariant() switch
+					{
+						"MULTIPLY" => " * ",
+						"ADD" => " + ",
+						"SUBTRACT" => " - ",
+						"DIVIDE" => " / ",
+						_ => throw new InvalidOperationException(
+							"Unsupported expression operator.")
+					};
+
+					return "(" + string.Join(sqlOperator, operands) + ")";
+				}
+
+			default:
+				throw new InvalidOperationException(
+					$"Unsupported expression type '{expression.Type}'.");
+		}
 	}
 
 	private static void ValidateJoinPlan(

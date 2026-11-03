@@ -50,12 +50,28 @@ public sealed class AggregationDimension
 public sealed class AggregationMeasure
 {
 	public string Key { get; set; } = "";
-
 	public string SourceAlias { get; set; } = "";
+	public string Column { get; set; } = "";
+	public string Aggregation { get; set; } = "";
 
+	public AggregationExpression? Expression { get; set; }
+
+}
+
+public sealed class AggregationExpression
+{
+	// COLUMN, VALUE, or an arithmetic operator.
+	public string Type { get; set; } = "";
+
+	// Used by COLUMN.
+	public string SourceAlias { get; set; } = "";
 	public string Column { get; set; } = "";
 
-	public string Aggregation { get; set; } = "";
+	// Used by VALUE.
+	public decimal? Value { get; set; }
+
+	// Used by arithmetic operators.
+	public List<AggregationExpression> Operands { get; set; } = [];
 }
 
 public sealed class AggregationFilter

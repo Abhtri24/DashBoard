@@ -33,8 +33,14 @@ public sealed class AggregationQueryValidator
 			"isNotNull"
 		};
 
+	// ---------------------------------------------------------
+	// 1. Structural validation
+	// ---------------------------------------------------------
+
 	public List<string> Validate(AggregationQueryPlan plan)
 	{
+		ArgumentNullException.ThrowIfNull(plan);
+
 		var errors = new List<string>();
 
 		if (plan.Tables.Count == 0)
@@ -68,6 +74,7 @@ public sealed class AggregationQueryValidator
 				"The number of joins must equal the number of tables minus one.");
 		}
 
+		// Joins
 		foreach (var join in plan.Joins)
 		{
 			if (!aliases.Contains(join.LeftAlias))
@@ -91,63 +98,101 @@ public sealed class AggregationQueryValidator
 		var fieldKeys = new HashSet<string>(
 			StringComparer.OrdinalIgnoreCase);
 
+		// Dimensions
 		foreach (var dimension in plan.Dimensions)
 		{
 			if (!aliases.Contains(dimension.SourceAlias))
+			{
 				errors.Add(
 					$"Unknown dimension source alias '{dimension.SourceAlias}'.");
+			}
 
 			if (string.IsNullOrWhiteSpace(dimension.Key))
+			{
 				errors.Add("Every dimension must have a key.");
+			}
+			else if (!fieldKeys.Add(dimension.Key))
+			{
+				errors.Add(
+					$"Duplicate output field key '{dimension.Key}'.");
+			}
 
 			if (string.IsNullOrWhiteSpace(dimension.Column))
+			{
 				errors.Add(
 					$"Column is missing for dimension '{dimension.Key}'.");
-
-			if (!fieldKeys.Add(dimension.Key))
-				errors.Add($"Duplicate output field key '{dimension.Key}'.");
+			}
 		}
 
+		// Measures
 		foreach (var measure in plan.Measures)
 		{
-			if (!aliases.Contains(measure.SourceAlias))
-				errors.Add(
-					$"Unknown measure source alias '{measure.SourceAlias}'.");
-
 			if (string.IsNullOrWhiteSpace(measure.Key))
+			{
 				errors.Add("Every measure must have a key.");
-
-			if (string.IsNullOrWhiteSpace(measure.Column))
+			}
+			else if (!fieldKeys.Add(measure.Key))
+			{
 				errors.Add(
-					$"Column is missing for measure '{measure.Key}'.");
+					$"Duplicate output field key '{measure.Key}'.");
+			}
 
 			if (!SupportedAggregations.Contains(measure.Aggregation))
+			{
 				errors.Add(
 					$"Unsupported aggregation '{measure.Aggregation}'.");
+			}
 
-			if (!fieldKeys.Add(measure.Key))
-				errors.Add($"Duplicate output field key '{measure.Key}'.");
+			if (measure.Expression == null)
+			{
+				if (!aliases.Contains(measure.SourceAlias))
+				{
+					errors.Add(
+						$"Unknown measure source alias '{measure.SourceAlias}'.");
+				}
+
+				if (string.IsNullOrWhiteSpace(measure.Column))
+				{
+					errors.Add(
+						$"Column is missing for measure '{measure.Key}'.");
+				}
+			}
+			else
+			{
+				ValidateExpression(
+					measure.Expression,
+					aliases,
+					errors);
+			}
 		}
 
+		// Filters
 		foreach (var filter in plan.Filters)
 		{
 			if (!aliases.Contains(filter.SourceAlias))
+			{
 				errors.Add(
 					$"Unknown filter source alias '{filter.SourceAlias}'.");
+			}
 
 			if (string.IsNullOrWhiteSpace(filter.Column))
 				errors.Add("A filter column is required.");
 
 			if (!SupportedOperators.Contains(filter.Operator))
+			{
 				errors.Add(
 					$"Unsupported filter operator '{filter.Operator}'.");
+			}
 		}
 
+		// Sorting
 		foreach (var sort in plan.Sort)
 		{
 			if (!fieldKeys.Contains(sort.Field))
+			{
 				errors.Add(
 					$"Sort field '{sort.Field}' is not a selected output field.");
+			}
 
 			if (!string.Equals(
 				sort.Direction,
@@ -163,6 +208,7 @@ public sealed class AggregationQueryValidator
 			}
 		}
 
+		// Pagination
 		if (plan.Page < 1)
 			errors.Add("Page must be greater than zero.");
 
@@ -172,14 +218,22 @@ public sealed class AggregationQueryValidator
 		return errors;
 	}
 
+	// ---------------------------------------------------------
+	// 2. Database schema validation
+	// ---------------------------------------------------------
 
 	public List<string> Validate(
 		AggregationQueryPlan plan,
 		DatabaseSchema schema)
 	{
+		ArgumentNullException.ThrowIfNull(plan);
+		ArgumentNullException.ThrowIfNull(schema);
+
 		var errors = Validate(plan);
+
 		if (errors.Count > 0)
 			return errors;
+
 		var tablesByAlias = plan.Tables.ToDictionary(
 			t => t.Alias,
 			StringComparer.OrdinalIgnoreCase);
@@ -188,16 +242,19 @@ public sealed class AggregationQueryValidator
 			t => $"{t.SchemaName}.{t.TableName}",
 			StringComparer.OrdinalIgnoreCase);
 
+		// Validate selected physical tables.
 		foreach (var table in plan.Tables)
 		{
 			var key = $"{table.Schema}.{table.Table}";
 
 			if (!discoveredTables.ContainsKey(key))
 			{
-				errors.Add($"Table '{key}' does not exist in the database.");
+				errors.Add(
+					$"Table '{key}' does not exist in the database.");
 			}
 		}
 
+		// Validate dimensions.
 		foreach (var dimension in plan.Dimensions)
 		{
 			ValidateColumn(
@@ -206,14 +263,25 @@ public sealed class AggregationQueryValidator
 				"dimension");
 		}
 
+		// Validate measures.
 		foreach (var measure in plan.Measures)
 		{
-			ValidateColumn(
-				measure.SourceAlias,
-				measure.Column,
-				"measure");
+			if (measure.Expression == null)
+			{
+				ValidateColumn(
+					measure.SourceAlias,
+					measure.Column,
+					"measure");
+			}
+			else
+			{
+				ValidateExpressionColumns(
+					measure.Expression,
+					ValidateColumn);
+			}
 		}
 
+		// Validate filters.
 		foreach (var filter in plan.Filters)
 		{
 			ValidateColumn(
@@ -224,18 +292,28 @@ public sealed class AggregationQueryValidator
 
 		return errors;
 
+		// Local function: validates a physical column against the schema.
 		void ValidateColumn(
 			string alias,
 			string column,
 			string fieldType)
 		{
-			if (!tablesByAlias.TryGetValue(alias, out var selectedTable))
+			if (!tablesByAlias.TryGetValue(
+				alias,
+				out var selectedTable))
+			{
 				return;
+			}
 
-			var tableKey = $"{selectedTable.Schema}.{selectedTable.Table}";
+			var tableKey =
+				$"{selectedTable.Schema}.{selectedTable.Table}";
 
-			if (!discoveredTables.TryGetValue(tableKey, out var databaseTable))
+			if (!discoveredTables.TryGetValue(
+				tableKey,
+				out var databaseTable))
+			{
 				return;
+			}
 
 			var exists = databaseTable.Columns.Any(c =>
 				string.Equals(
@@ -252,4 +330,110 @@ public sealed class AggregationQueryValidator
 		}
 	}
 
+	// ---------------------------------------------------------
+	// 3. Expression structure validation
+	// ---------------------------------------------------------
+
+	private static void ValidateExpression(
+		AggregationExpression expression,
+		HashSet<string> aliases,
+		List<string> errors)
+	{
+		if (expression == null)
+		{
+			errors.Add("Expression cannot be null.");
+			return;
+		}
+
+		switch (expression.Type.ToUpperInvariant())
+		{
+			case "COLUMN":
+
+				if (!aliases.Contains(expression.SourceAlias))
+				{
+					errors.Add(
+						$"Unknown expression source alias '{expression.SourceAlias}'.");
+				}
+
+				if (string.IsNullOrWhiteSpace(expression.Column))
+				{
+					errors.Add(
+						"Expression column cannot be empty.");
+				}
+
+				break;
+
+			case "VALUE":
+
+				if (!expression.Value.HasValue)
+				{
+					errors.Add(
+						"Expression numeric value is missing.");
+				}
+
+				break;
+
+			case "MULTIPLY":
+			case "ADD":
+			case "SUBTRACT":
+			case "DIVIDE":
+
+				if (expression.Operands == null ||
+					expression.Operands.Count < 2)
+				{
+					errors.Add(
+						$"Expression '{expression.Type}' needs at least two operands.");
+
+					break;
+				}
+
+				foreach (var operand in expression.Operands)
+				{
+					ValidateExpression(
+						operand,
+						aliases,
+						errors);
+				}
+
+				break;
+
+			default:
+
+				errors.Add(
+					$"Unsupported expression type '{expression.Type}'.");
+
+				break;
+		}
+	}
+
+	// ---------------------------------------------------------
+	// 4. Expression physical-column validation
+	// ---------------------------------------------------------
+
+	private static void ValidateExpressionColumns(
+		AggregationExpression expression,
+		Action<string, string, string> validateColumn)
+	{
+		if (expression.Type.Equals(
+			"COLUMN",
+			StringComparison.OrdinalIgnoreCase))
+		{
+			validateColumn(
+				expression.SourceAlias,
+				expression.Column,
+				"expression");
+
+			return;
+		}
+
+		if (expression.Operands == null)
+			return;
+
+		foreach (var operand in expression.Operands)
+		{
+			ValidateExpressionColumns(
+				operand,
+				validateColumn);
+		}
+	}
 }

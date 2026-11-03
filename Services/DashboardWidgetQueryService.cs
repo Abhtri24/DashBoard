@@ -1,4 +1,6 @@
-﻿using Dapper;
+﻿
+using System.Text.Json;
+using Dapper;
 using DashBoard;
 using DashBoard.Models;
 
@@ -81,8 +83,8 @@ public sealed class DashboardWidgetQueryService
 
 		await using var connection = await _db.OpenAsync();
 
-		// Resolve the widget only through an active dashboard belonging
-		// to the requested department.
+		// Resolve the widget through an active dashboard
+		// and the department's permitted dataset.
 		const string widgetSql = """
             SELECT
                 w.WidgetId,
@@ -117,9 +119,10 @@ public sealed class DashboardWidgetQueryService
 				cancellationToken: cancellationToken));
 
 		if (widget is null)
-			throw new InvalidOperationException("Widget not found or not accessible.");
+			throw new InvalidOperationException(
+				"Widget not found or not accessible.");
 
-		// Load the widget's configured measures, dimensions and filters.
+		// Load configured measures, dimensions and filters.
 		const string measuresSql = """
             SELECT
                 WidgetId,
@@ -177,6 +180,7 @@ public sealed class DashboardWidgetQueryService
 		if (widget.Measures.Count == 0 && widget.Dimensions.Count == 0)
 			throw new ArgumentException("Widget has no configured fields.");
 
+		// Load enabled physical tables belonging to the dataset.
 		const string tablesSql = """
             SELECT
                 DatasetTableId,
@@ -200,6 +204,7 @@ public sealed class DashboardWidgetQueryService
 			throw new InvalidOperationException(
 				$"Dataset '{widget.DatasetKey}' has no enabled tables.");
 
+		// Load dataset column metadata, including calculated expressions.
 		const string columnsSql = """
             SELECT
                 ColumnKey,
@@ -227,6 +232,7 @@ public sealed class DashboardWidgetQueryService
 			x => x.ColumnKey,
 			StringComparer.OrdinalIgnoreCase);
 
+		// Collect every column referenced by this widget.
 		var selectedColumns = widget.Dimensions
 			.Select(x => x.ColumnKey)
 			.Concat(widget.Measures.Select(x => x.ColumnKey))
@@ -244,6 +250,7 @@ public sealed class DashboardWidgetQueryService
 		var primaryTable = datasetTables.FirstOrDefault(x => x.IsPrimary)
 			?? datasetTables[0];
 
+		// Determine which physical tables are needed.
 		var referencedTableIds = selectedColumns
 			.Select(key => columnsByKey[key].DatasetTableId)
 			.Where(id => id.HasValue)
@@ -270,6 +277,8 @@ public sealed class DashboardWidgetQueryService
 				? $"t{x.DatasetTableId}"
 				: x.TableAlias!);
 
+		// Discover the physical schema and construct the dataset-specific
+		// relationship graph. Only approved dataset relationships are used.
 		var schema = await _schemaDiscovery.DiscoverAsync(
 			null,
 			cancellationToken);
@@ -298,6 +307,7 @@ public sealed class DashboardWidgetQueryService
 			PageSize = pageSize
 		};
 
+		// Dimensions.
 		foreach (var dimension in widget.Dimensions.OrderBy(x => x.Position))
 		{
 			var column = columnsByKey[dimension.ColumnKey];
@@ -314,6 +324,7 @@ public sealed class DashboardWidgetQueryService
 			});
 		}
 
+		// Measures, including calculated expressions.
 		foreach (var measure in widget.Measures.OrderBy(x => x.Position))
 		{
 			var column = columnsByKey[measure.ColumnKey];
@@ -322,25 +333,49 @@ public sealed class DashboardWidgetQueryService
 				throw new InvalidOperationException(
 					$"Measure '{column.ColumnKey}' has no source table.");
 
-			if (!string.Equals(
+			var aggregationMeasure = new AggregationMeasure
+			{
+				Key = column.ColumnKey,
+				SourceAlias = aliasByTableId[column.DatasetTableId.Value],
+				Aggregation = measure.AggregationOverride
+					?? column.Agg
+					?? "SUM"
+			};
+
+			if (string.Equals(
+				column.SourceType,
+				"EXPRESSION",
+				StringComparison.OrdinalIgnoreCase))
+			{
+				if (string.IsNullOrWhiteSpace(column.ExpressionDefinition))
+					throw new InvalidOperationException(
+						$"Expression definition is missing for '{column.ColumnKey}'.");
+
+				aggregationMeasure.Expression = ParseExpression(
+					column.ExpressionDefinition,
+					column.DatasetTableId.Value,
+					datasetColumns,
+					aliasByTableId);
+			}
+			else if (string.Equals(
 				column.SourceType,
 				"COLUMN",
 				StringComparison.OrdinalIgnoreCase))
 			{
-				throw new NotSupportedException(
-					$"Calculated measure '{column.ColumnKey}' needs " +
-					"the expression-enabled SQL generator.");
+				aggregationMeasure.Column =
+					column.SourceColumn ?? column.ColumnName;
+			}
+			else
+			{
+				throw new InvalidOperationException(
+					$"Unsupported source type '{column.SourceType}' " +
+					$"for measure '{column.ColumnKey}'.");
 			}
 
-			plan.Measures.Add(new AggregationMeasure
-			{
-				Key = column.ColumnKey,
-				SourceAlias = aliasByTableId[column.DatasetTableId.Value],
-				Column = column.SourceColumn ?? column.ColumnName,
-				Aggregation = measure.AggregationOverride ?? column.Agg ?? "SUM"
-			});
+			plan.Measures.Add(aggregationMeasure);
 		}
 
+		// Filters.
 		foreach (var filter in widget.Filters.OrderBy(x => x.Position))
 		{
 			var column = columnsByKey[filter.ColumnKey];
@@ -358,12 +393,15 @@ public sealed class DashboardWidgetQueryService
 			});
 		}
 
+		// Validate the query against the discovered physical schema.
 		var validationErrors = _validator.Validate(plan, schema);
 
 		if (validationErrors.Count > 0)
 			throw new InvalidOperationException(
 				string.Join("; ", validationErrors));
 
+		// Reject aggregations that could produce incorrect results
+		// because of unsafe joins.
 		var safety = _safety.Analyze(graph, plan);
 
 		if (!safety.IsSafe)
@@ -380,4 +418,119 @@ public sealed class DashboardWidgetQueryService
 			generated,
 			cancellationToken);
 	}
+
+	private static AggregationExpression ParseExpression(
+		string json,
+		int expectedTableId,
+		List<DatasetColumnRow> datasetColumns,
+		Dictionary<int, string> aliasByTableId)
+	{
+		using var document = JsonDocument.Parse(json);
+
+		return ParseExpressionNode(
+			document.RootElement,
+			expectedTableId,
+			datasetColumns,
+			aliasByTableId);
+	}
+
+
+	private static AggregationExpression ParseExpressionNode(
+		JsonElement element,
+		int expectedTableId,
+		List<DatasetColumnRow> datasetColumns,
+		Dictionary<int, string> aliasByTableId)
+	{
+		if (element.ValueKind != JsonValueKind.Object)
+			throw new InvalidOperationException(
+				"Every expression node must be a JSON object.");
+
+		// Physical column reference.
+		if (element.TryGetProperty("column", out var columnElement))
+		{
+			if (columnElement.ValueKind != JsonValueKind.String)
+				throw new InvalidOperationException(
+					"Expression column must be a string.");
+
+			var columnName = columnElement.GetString();
+
+			if (string.IsNullOrWhiteSpace(columnName))
+				throw new InvalidOperationException(
+					"Expression column cannot be empty.");
+
+			if (!aliasByTableId.TryGetValue(expectedTableId, out var alias))
+				throw new InvalidOperationException(
+					$"No table alias found for DatasetTableId '{expectedTableId}'.");
+
+			return new AggregationExpression
+			{
+				Type = "COLUMN",
+				SourceAlias = alias,
+				Column = columnName
+			};
+		}
+
+		// Numeric literal.
+		if (element.TryGetProperty("value", out var valueElement))
+		{
+			if (!valueElement.TryGetDecimal(out var value))
+				throw new InvalidOperationException(
+					"Expression values must be valid numeric literals.");
+
+			return new AggregationExpression
+			{
+				Type = "VALUE",
+				Value = value
+			};
+		}
+
+		// Arithmetic operation.
+		if (!element.TryGetProperty("operator", out var operatorElement) ||
+			operatorElement.ValueKind != JsonValueKind.String)
+		{
+			throw new InvalidOperationException(
+				"Expression node must contain column, value, or operator.");
+		}
+
+		var operation = operatorElement
+			.GetString()?
+			.ToUpperInvariant();
+
+		if (operation is not (
+			"MULTIPLY" or
+			"ADD" or
+			"SUBTRACT" or
+			"DIVIDE"))
+		{
+			throw new InvalidOperationException(
+				$"Unsupported expression operator '{operation}'.");
+		}
+
+		if (!element.TryGetProperty("operands", out var operandsElement) ||
+			operandsElement.ValueKind != JsonValueKind.Array)
+		{
+			throw new InvalidOperationException(
+				$"Expression '{operation}' must contain an operands array.");
+		}
+
+		var operands = operandsElement
+			.EnumerateArray()
+			.Select(x => ParseExpressionNode(
+				x,
+				expectedTableId,
+				datasetColumns,
+				aliasByTableId))
+			.ToList();
+
+		if (operands.Count < 2)
+			throw new InvalidOperationException(
+				$"Expression '{operation}' requires at least two operands.");
+
+		return new AggregationExpression
+		{
+			Type = operation!,
+			Operands = operands
+		};
+	}
+
 }
