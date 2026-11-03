@@ -20,8 +20,17 @@ builder.Services.AddScoped<AggregationSqlGenerator>();
 builder.Services.AddScoped<AutomaticJoinPlannerService>();
 builder.Services.AddScoped<AggregationQueryExecutionService>();
 builder.Services.AddScoped<DashboardConfigurationService>();
+builder.Services.AddScoped<QueryBuilderService>();
 builder.Services.AddScoped<DashboardWidgetQueryService>();
 builder.Services.AddScoped<DashboardQueryService>();
+
+
+builder.Services.AddSession(options =>
+{
+	options.IdleTimeout = TimeSpan.FromHours(8);
+	options.Cookie.HttpOnly = true;
+	options.Cookie.IsEssential = true;
+});
 
 var app = builder.Build();
 
@@ -38,6 +47,8 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseRouting();
+app.UseSession();
+
 
 app.UseAuthorization();
 

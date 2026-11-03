@@ -1,9 +1,11 @@
-﻿using Dapper;
+﻿using System.Text.Json;
+using Dapper;
 using DashBoard;
-using Microsoft.AspNetCore.Mvc;
 using DashBoard.Catalog;
 using DashBoard.Models;
 using DashBoard.Services;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 
 [ApiController]
 [Route("api/dash")]
@@ -32,6 +34,8 @@ public class DashController : ControllerBase
 	private readonly DashboardConfigurationService _dashboardConfigurationService;
 
 	private readonly DashboardWidgetQueryService _widgetQueryService;
+	private readonly QueryBuilderService _queryBuilderService;
+
 	public DashController(
 		SqlConnectionFactory db,
 		CatalogService catalog,
@@ -46,7 +50,9 @@ public class DashController : ControllerBase
 		AggregationSqlGenerator sqlGenerator,
 		AggregationQueryExecutionService executionService,
 		DashboardConfigurationService dashboardConfigurationService,
-		DashboardWidgetQueryService widgetQueryService
+		DashboardWidgetQueryService widgetQueryService,
+		QueryBuilderService queryBuilderService
+
 		)
 	{
 		_db = db;
@@ -63,6 +69,97 @@ public class DashController : ControllerBase
 		_executionService = executionService;
 		_dashboardConfigurationService = dashboardConfigurationService;
 		_widgetQueryService = widgetQueryService;
+		_queryBuilderService = queryBuilderService;
+	}
+
+	private const string DepartmentSessionKey = "ActiveDepartment";
+
+	[HttpPost("department")]
+	public IActionResult SetDepartment([FromBody] DepartmentRequest request)
+	{
+		var allowedDepartments = new[]
+		{
+		"sales",
+		"finance",
+		"hr",
+		"operations"
+	};
+
+		var department = request.Department?.Trim().ToLowerInvariant();
+
+		if (department is null || !allowedDepartments.Contains(department))
+			return BadRequest(new { error = "Invalid department." });
+
+		HttpContext.Session.SetString(DepartmentSessionKey, department);
+
+		return Ok(new { department });
+	}
+
+	[HttpGet("department")]
+	public IActionResult GetDepartment()
+	{
+		var department = HttpContext.Session.GetString(DepartmentSessionKey);
+
+		if (string.IsNullOrWhiteSpace(department))
+			return BadRequest(new { error = "No department selected." });
+
+		return Ok(new { department });
+	}
+
+	public sealed class DepartmentRequest
+	{
+		public string Department { get; set; } = "";
+	}
+
+	[HttpGet("query-builder/datasets")]
+	public async Task<IActionResult> GetQueryBuilderDatasets(
+	[FromQuery] string department,
+	CancellationToken cancellationToken)
+	{
+		return Ok(await _queryBuilderService.GetDatasetsAsync(
+			department, cancellationToken));
+	}
+
+	[HttpGet("query-builder/metadata")]
+	public async Task<IActionResult> GetQueryBuilderMetadata(
+		[FromQuery] string department,
+		[FromQuery] string dataset,
+		CancellationToken cancellationToken)
+	{
+		try
+		{
+			return Ok(await _queryBuilderService.GetMetadataAsync(
+				department, dataset, cancellationToken));
+		}
+		catch (UnauthorizedAccessException ex)
+		{
+			return StatusCode(403, new { error = ex.Message });
+		}
+	}
+
+	[HttpPost("query-builder/execute")]
+	public async Task<IActionResult> ExecuteQueryBuilder(
+		[FromQuery] string department,
+		[FromBody] JsonElement request,
+		CancellationToken cancellationToken)
+	{
+		try
+		{
+			return Ok(await _queryBuilderService.ExecuteAsync(
+				department, request, cancellationToken));
+		}
+		catch (UnauthorizedAccessException ex)
+		{
+			return StatusCode(403, new { error = ex.Message });
+		}
+		catch (ArgumentException ex)
+		{
+			return BadRequest(new { error = ex.Message });
+		}
+		catch (InvalidOperationException ex)
+		{
+			return BadRequest(new { error = ex.Message });
+		}
 	}
 
 
