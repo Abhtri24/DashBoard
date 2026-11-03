@@ -1,4 +1,7 @@
 ﻿
+using Dapper;
+using DashBoard;
+
 namespace DashBoard.Services;
 
 public sealed class DatabaseRelationshipGraph
@@ -10,12 +13,11 @@ public sealed class DatabaseRelationshipGraph
 public sealed class DatabaseRelationship
 {
 	public string ConstraintName { get; set; } = "";
+	public string RelationshipSource { get; set; } = "FOREIGN_KEY";
 
-	// FK side (child table)
 	public string FromSchema { get; set; } = "";
 	public string FromTable { get; set; } = "";
 
-	// Referenced side (parent table)
 	public string ToSchema { get; set; } = "";
 	public string ToTable { get; set; } = "";
 
@@ -27,16 +29,11 @@ public sealed class DatabaseRelationship
 	public bool IsFromSideUnique { get; set; }
 	public bool IsToSideUnique { get; set; }
 
-	// Cardinality when traversing From -> To.
 	public string FromToCardinality { get; set; } = "Unknown";
-
-	// Cardinality when traversing To -> From.
 	public string ToFromCardinality { get; set; } = "Unknown";
 
-	// Only trusted, enabled relationships are eligible
-	// for automatic join planning by default.
 	public bool CanUseForAutomaticJoins =>
-	IsEnabled && IsTrusted;
+		IsEnabled && IsTrusted;
 }
 
 public sealed class DatabaseRelationshipColumn
@@ -49,16 +46,32 @@ public sealed class DatabaseRelationshipColumn
 public sealed class DatabaseRelationshipService
 {
 	private readonly DatabaseSchemaDiscoveryService _discovery;
+	private readonly SqlConnectionFactory _db;
 
 	public DatabaseRelationshipService(
-		DatabaseSchemaDiscoveryService discovery)
+		DatabaseSchemaDiscoveryService discovery,
+		SqlConnectionFactory db)
 	{
 		_discovery = discovery;
+		_db = db;
+	}
+
+	private sealed class DatasetRelationshipRow
+	{
+		public int RelationshipId { get; set; }
+		public string FromColumn { get; set; } = "";
+		public string ToColumn { get; set; } = "";
+		public string Cardinality { get; set; } = "";
+		public string FromSchema { get; set; } = "";
+		public string FromTable { get; set; } = "";
+		public string ToSchema { get; set; } = "";
+		public string ToTable { get; set; } = "";
 	}
 
 	public async Task<DatabaseRelationshipGraph> BuildGraphAsync(
 		string? schemaName = null,
-		CancellationToken cancellationToken = default)
+		CancellationToken cancellationToken = default,
+		string? datasetKey = null)
 	{
 		var schema = await _discovery.DiscoverAsync(
 			schemaName,
@@ -87,33 +100,23 @@ public sealed class DatabaseRelationshipService
 					})
 					.ToList();
 
-				var fromColumns = columns
-					.Select(c => c.FromColumn)
-					.ToList();
-
-				var toColumns = columns
-					.Select(c => c.ToColumn)
-					.ToList();
-
 				var fromUnique = fromTable != null &&
-					HasExactUniqueKey(fromTable, fromColumns);
+					HasExactUniqueKey(
+						fromTable,
+						columns.Select(c => c.FromColumn).ToList());
 
 				var toUnique = toTable != null &&
-					HasExactUniqueKey(toTable, toColumns);
-
-				var forwardCardinality =
-					GetCardinality(fromUnique, toUnique);
-
-				var reverseCardinality =
-					GetCardinality(toUnique, fromUnique);
+					HasExactUniqueKey(
+						toTable,
+						columns.Select(c => c.ToColumn).ToList());
 
 				return new DatabaseRelationship
 				{
 					ConstraintName = fk.ConstraintName,
+					RelationshipSource = "FOREIGN_KEY",
 
 					FromSchema = fk.ParentSchema,
 					FromTable = fk.ParentTable,
-
 					ToSchema = fk.ReferencedSchema,
 					ToTable = fk.ReferencedTable,
 
@@ -125,11 +128,132 @@ public sealed class DatabaseRelationshipService
 					IsFromSideUnique = fromUnique,
 					IsToSideUnique = toUnique,
 
-					FromToCardinality = forwardCardinality,
-					ToFromCardinality = reverseCardinality
+					FromToCardinality = GetCardinality(
+						fromUnique,
+						toUnique),
+
+					ToFromCardinality = GetCardinality(
+						toUnique,
+						fromUnique)
 				};
 			})
 			.ToList();
+
+		if (!string.IsNullOrWhiteSpace(datasetKey))
+		{
+			await using var connection = await _db.OpenAsync();
+
+			const string sql = """
+                SELECT
+                    dr.RelationshipId,
+                    dr.FromColumn,
+                    dr.ToColumn,
+                    dr.Cardinality,
+                    ft.SchemaName AS FromSchema,
+                    ft.ObjectName AS FromTable,
+                    tt.SchemaName AS ToSchema,
+                    tt.ObjectName AS ToTable
+                FROM dash.DatasetRelationship dr
+                INNER JOIN dash.DatasetTable ft
+                    ON ft.DatasetTableId = dr.FromDatasetTableId
+                INNER JOIN dash.DatasetTable tt
+                    ON tt.DatasetTableId = dr.ToDatasetTableId
+                WHERE dr.DatasetKey = @DatasetKey
+                  AND dr.IsApproved = 1
+                  AND dr.IsEnabled = 1
+                  AND ft.DatasetKey = dr.DatasetKey
+                  AND tt.DatasetKey = dr.DatasetKey
+                  AND ft.IsEnabled = 1
+                  AND tt.IsEnabled = 1;
+                """;
+
+			var configuredRelationships =
+				await connection.QueryAsync<DatasetRelationshipRow>(
+					new CommandDefinition(
+						sql,
+						new { DatasetKey = datasetKey },
+						cancellationToken: cancellationToken));
+
+			foreach (var item in configuredRelationships)
+			{
+				var cardinality = NormalizeCardinality(
+					item.Cardinality);
+
+				if (cardinality == "Unknown")
+					continue;
+
+				var fromTable = FindTable(
+					schema.Tables,
+					item.FromSchema,
+					item.FromTable);
+
+				var toTable = FindTable(
+					schema.Tables,
+					item.ToSchema,
+					item.ToTable);
+
+				if (fromTable == null || toTable == null)
+					continue;
+
+				// Validate both configured columns against
+				// the discovered physical database schema.
+				var fromColumnExists = fromTable.Columns.Any(c =>
+					string.Equals(
+						c.ColumnName,
+						item.FromColumn,
+						StringComparison.OrdinalIgnoreCase));
+
+				var toColumnExists = toTable.Columns.Any(c =>
+					string.Equals(
+						c.ColumnName,
+						item.ToColumn,
+						StringComparison.OrdinalIgnoreCase));
+
+				if (!fromColumnExists || !toColumnExists)
+					continue;
+
+				var relationship = new DatabaseRelationship
+				{
+					ConstraintName = $"DATASET:{item.RelationshipId}",
+					RelationshipSource = "DATASET",
+
+					FromSchema = item.FromSchema,
+					FromTable = item.FromTable,
+					ToSchema = item.ToSchema,
+					ToTable = item.ToTable,
+
+					Columns =
+					[
+						new DatabaseRelationshipColumn
+						{
+							FromColumn = item.FromColumn,
+							ToColumn = item.ToColumn,
+							KeyPosition = 1
+						}
+					],
+
+					IsEnabled = true,
+					IsTrusted = true,
+
+					IsFromSideUnique = cardinality is
+						"OneToOne",
+
+					IsToSideUnique = cardinality is
+						"OneToOne" or "ManyToOne",
+
+					FromToCardinality = cardinality,
+					ToFromCardinality = ReverseCardinality(cardinality)
+				};
+
+				// Physical foreign keys take precedence when
+				// the same relationship is already discovered.
+				var alreadyExists = relationships.Any(existing =>
+					SameRelationship(existing, relationship));
+
+				if (!alreadyExists)
+					relationships.Add(relationship);
+			}
+		}
 
 		return new DatabaseRelationshipGraph
 		{
@@ -144,14 +268,11 @@ public sealed class DatabaseRelationshipService
 		string table)
 	{
 		return tables.FirstOrDefault(t =>
-			string.Equals(
+			Matches(
 				t.SchemaName,
-				schema,
-				StringComparison.OrdinalIgnoreCase) &&
-			string.Equals(
 				t.TableName,
-				table,
-				StringComparison.OrdinalIgnoreCase));
+				schema,
+				table));
 	}
 
 	private static bool HasExactUniqueKey(
@@ -165,7 +286,6 @@ public sealed class DatabaseRelationshipService
 			columns,
 			StringComparer.OrdinalIgnoreCase);
 
-		// Primary key
 		var primaryKeyColumns = table.PrimaryKeys
 			.OrderBy(k => k.KeyPosition)
 			.Select(k => k.ColumnName)
@@ -174,7 +294,6 @@ public sealed class DatabaseRelationshipService
 		if (HasExactColumnSet(primaryKeyColumns, requested))
 			return true;
 
-		// Additional unique constraints and indexes
 		foreach (var uniqueKey in table.UniqueKeys)
 		{
 			var uniqueColumns = uniqueKey.Columns
@@ -215,6 +334,122 @@ public sealed class DatabaseRelationshipService
 		return "Unknown";
 	}
 
+	private static string NormalizeCardinality(string cardinality)
+	{
+		return cardinality.Trim().ToUpperInvariant() switch
+		{
+			"ONE_TO_ONE" => "OneToOne",
+			"ONE_TO_MANY" => "OneToMany",
+			"MANY_TO_ONE" => "ManyToOne",
+			"MANY_TO_MANY" => "ManyToMany",
+			_ => "Unknown"
+		};
+	}
+
+	private static string ReverseCardinality(string cardinality)
+	{
+		return cardinality switch
+		{
+			"OneToOne" => "OneToOne",
+			"OneToMany" => "ManyToOne",
+			"ManyToOne" => "OneToMany",
+			"ManyToMany" => "ManyToMany",
+			_ => "Unknown"
+		};
+	}
+
+	private static bool SameRelationship(
+		DatabaseRelationship a,
+		DatabaseRelationship b)
+	{
+		if (Matches(
+			a.FromSchema,
+			a.FromTable,
+			b.FromSchema,
+			b.FromTable)
+			&&
+			Matches(
+				a.ToSchema,
+				a.ToTable,
+				b.ToSchema,
+				b.ToTable)
+			&&
+			SameColumns(a.Columns, b.Columns))
+		{
+			return true;
+		}
+
+		// Also detect the same relationship in reverse direction.
+		return Matches(
+			a.FromSchema,
+			a.FromTable,
+			b.ToSchema,
+			b.ToTable)
+			&&
+			Matches(
+				a.ToSchema,
+				a.ToTable,
+				b.FromSchema,
+				b.FromTable)
+			&&
+			SameColumnsReversed(a.Columns, b.Columns);
+	}
+
+	private static bool SameColumns(
+		List<DatabaseRelationshipColumn> a,
+		List<DatabaseRelationshipColumn> b)
+	{
+		if (a.Count != b.Count)
+			return false;
+
+		return a.All(ac => b.Any(bc =>
+			string.Equals(
+				ac.FromColumn,
+				bc.FromColumn,
+				StringComparison.OrdinalIgnoreCase)
+			&&
+			string.Equals(
+				ac.ToColumn,
+				bc.ToColumn,
+				StringComparison.OrdinalIgnoreCase)));
+	}
+
+	private static bool SameColumnsReversed(
+		List<DatabaseRelationshipColumn> a,
+		List<DatabaseRelationshipColumn> b)
+	{
+		if (a.Count != b.Count)
+			return false;
+
+		return a.All(ac => b.Any(bc =>
+			string.Equals(
+				ac.FromColumn,
+				bc.ToColumn,
+				StringComparison.OrdinalIgnoreCase)
+			&&
+			string.Equals(
+				ac.ToColumn,
+				bc.FromColumn,
+				StringComparison.OrdinalIgnoreCase)));
+	}
+
+	private static bool Matches(
+		string schema1,
+		string table1,
+		string schema2,
+		string table2)
+	{
+		return string.Equals(
+				   schema1,
+				   schema2,
+				   StringComparison.OrdinalIgnoreCase)
+			   &&
+			   string.Equals(
+				   table1,
+				   table2,
+				   StringComparison.OrdinalIgnoreCase);
+	}
+
 	public List<List<DatabaseRelationship>> FindJoinPaths(
 		DatabaseRelationshipGraph graph,
 		string fromSchema,
@@ -248,7 +483,6 @@ public sealed class DatabaseRelationshipService
 		return paths;
 	}
 
-
 	public List<List<DatabaseRelationship>> FindAutomaticJoinPaths(
 		DatabaseRelationshipGraph graph,
 		string fromSchema,
@@ -274,7 +508,6 @@ public sealed class DatabaseRelationshipService
 			maxDepth);
 	}
 
-
 	private static void Search(
 		DatabaseRelationshipGraph graph,
 		string currentSchema,
@@ -286,14 +519,11 @@ public sealed class DatabaseRelationshipService
 		List<DatabaseRelationship> currentPath,
 		List<List<DatabaseRelationship>> paths)
 	{
-		if (string.Equals(
-				currentSchema,
-				targetSchema,
-				StringComparison.OrdinalIgnoreCase) &&
-			string.Equals(
-				currentTable,
-				targetTable,
-				StringComparison.OrdinalIgnoreCase))
+		if (Matches(
+			currentSchema,
+			currentTable,
+			targetSchema,
+			targetTable))
 		{
 			paths.Add([.. currentPath]);
 			return;
@@ -312,21 +542,21 @@ public sealed class DatabaseRelationshipService
 			string nextTable;
 
 			if (string.Equals(
-					GetTableKey(
-						relationship.FromSchema,
-						relationship.FromTable),
-					currentKey,
-					StringComparison.OrdinalIgnoreCase))
+				GetTableKey(
+					relationship.FromSchema,
+					relationship.FromTable),
+				currentKey,
+				StringComparison.OrdinalIgnoreCase))
 			{
 				nextSchema = relationship.ToSchema;
 				nextTable = relationship.ToTable;
 			}
 			else if (string.Equals(
-						 GetTableKey(
-							 relationship.ToSchema,
-							 relationship.ToTable),
-						 currentKey,
-						 StringComparison.OrdinalIgnoreCase))
+				GetTableKey(
+					relationship.ToSchema,
+					relationship.ToTable),
+				currentKey,
+				StringComparison.OrdinalIgnoreCase))
 			{
 				nextSchema = relationship.FromSchema;
 				nextTable = relationship.FromTable;

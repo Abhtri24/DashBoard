@@ -28,6 +28,8 @@ public class DashController : ControllerBase
 	private readonly AggregationSqlGenerator _sqlGenerator;
 
 	private readonly AggregationQueryExecutionService _executionService;
+
+	private readonly DashboardConfigurationService _dashboardConfigurationService;
 	public DashController(
 		SqlConnectionFactory db,
 		CatalogService catalog,
@@ -40,7 +42,8 @@ public class DashController : ControllerBase
 		AggregationQueryValidator queryValidator,
 		AutomaticJoinPlannerService joinPlanner,
 		AggregationSqlGenerator sqlGenerator,
-		AggregationQueryExecutionService executionService
+		AggregationQueryExecutionService executionService,
+		DashboardConfigurationService dashboardConfigurationService
 		)
 	{
 		_db = db;
@@ -55,6 +58,38 @@ public class DashController : ControllerBase
 		_joinPlanner = joinPlanner;
 		_sqlGenerator = sqlGenerator;
 		_executionService = executionService;
+		_dashboardConfigurationService = dashboardConfigurationService;
+	}
+
+	[HttpGet("relationships")]
+public async Task<IActionResult> GetRelationships(
+    [FromQuery] string? schemaName,
+    [FromQuery] string? datasetKey,
+    CancellationToken cancellationToken)
+{
+    var graph = await _relationshipService.BuildGraphAsync(
+        schemaName,
+        cancellationToken,
+        datasetKey);
+
+    return Ok(graph);
+}
+
+	[HttpGet("dashboard/{dashboardKey}")]
+	public async Task<IActionResult> GetDashboard(
+	string dashboardKey,
+	[FromQuery] string department,
+	CancellationToken cancellationToken)
+	{
+		var dashboard = await _dashboardConfigurationService.GetDashboardAsync(
+			dashboardKey,
+			department,
+			cancellationToken);
+
+		if (dashboard is null)
+			return NotFound(new { error = "Dashboard not found." });
+
+		return Ok(dashboard);
 	}
 
 	[HttpPost("execute-query")]
@@ -306,17 +341,7 @@ public class DashController : ControllerBase
 		return Ok(result);
 	}
 
-	[HttpGet("relationships")]
-	public async Task<IActionResult> GetRelationships(
-	[FromQuery] string? schemaName,
-	CancellationToken cancellationToken)
-	{
-		var graph = await _relationshipService.BuildGraphAsync(
-			schemaName,
-			cancellationToken);
 
-		return Ok(graph);
-	}
 
 	[HttpGet("relationships/paths")]
 	public async Task<IActionResult> GetRelationshipPaths(
