@@ -20,6 +20,7 @@ builder.Services.AddScoped<AggregationSqlGenerator>();
 builder.Services.AddScoped<AutomaticJoinPlannerService>();
 builder.Services.AddScoped<AggregationQueryExecutionService>();
 builder.Services.AddScoped<DashboardConfigurationService>();
+builder.Services.AddScoped<DashboardWidgetQueryService>();
 builder.Services.AddScoped<DashboardQueryService>();
 
 var app = builder.Build();

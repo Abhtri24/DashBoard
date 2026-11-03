@@ -30,6 +30,8 @@ public class DashController : ControllerBase
 	private readonly AggregationQueryExecutionService _executionService;
 
 	private readonly DashboardConfigurationService _dashboardConfigurationService;
+
+	private readonly DashboardWidgetQueryService _widgetQueryService;
 	public DashController(
 		SqlConnectionFactory db,
 		CatalogService catalog,
@@ -43,7 +45,8 @@ public class DashController : ControllerBase
 		AutomaticJoinPlannerService joinPlanner,
 		AggregationSqlGenerator sqlGenerator,
 		AggregationQueryExecutionService executionService,
-		DashboardConfigurationService dashboardConfigurationService
+		DashboardConfigurationService dashboardConfigurationService,
+		DashboardWidgetQueryService widgetQueryService
 		)
 	{
 		_db = db;
@@ -59,7 +62,29 @@ public class DashController : ControllerBase
 		_sqlGenerator = sqlGenerator;
 		_executionService = executionService;
 		_dashboardConfigurationService = dashboardConfigurationService;
+		_widgetQueryService = widgetQueryService;
 	}
+
+	[HttpPost("dashboard/{dashboardKey}/widget/{widgetKey}")]
+	public async Task<IActionResult> GetWidgetData(
+		string dashboardKey,
+		string widgetKey,
+		[FromQuery] string department,
+		[FromQuery] int page = 1,
+		[FromQuery] int pageSize = 100,
+		CancellationToken cancellationToken = default)
+	{
+		var result = await _widgetQueryService.ExecuteAsync(
+			dashboardKey,
+			widgetKey,
+			department,
+			page,
+			pageSize,
+			cancellationToken);
+
+		return Ok(result);
+	}
+
 
 	[HttpGet("relationships")]
 public async Task<IActionResult> GetRelationships(

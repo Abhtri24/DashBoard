@@ -77,67 +77,55 @@ public sealed class DatabaseRelationshipService
 			schemaName,
 			cancellationToken);
 
-		var relationships = schema.ForeignKeys
-			.Select(fk =>
-			{
-				var fromTable = FindTable(
-					schema.Tables,
-					fk.ParentSchema,
-					fk.ParentTable);
-
-				var toTable = FindTable(
-					schema.Tables,
-					fk.ReferencedSchema,
-					fk.ReferencedTable);
-
-				var columns = fk.Columns
-					.OrderBy(c => c.KeyPosition)
-					.Select(c => new DatabaseRelationshipColumn
-					{
-						FromColumn = c.ParentColumn,
-						ToColumn = c.ReferencedColumn,
-						KeyPosition = c.KeyPosition
-					})
-					.ToList();
-
-				var fromUnique = fromTable != null &&
-					HasExactUniqueKey(
-						fromTable,
-						columns.Select(c => c.FromColumn).ToList());
-
-				var toUnique = toTable != null &&
-					HasExactUniqueKey(
-						toTable,
-						columns.Select(c => c.ToColumn).ToList());
-
-				return new DatabaseRelationship
+		var relationships = string.IsNullOrWhiteSpace(datasetKey)
+			? schema.ForeignKeys
+				.Select(fk =>
 				{
-					ConstraintName = fk.ConstraintName,
-					RelationshipSource = "FOREIGN_KEY",
+					var fromTable = FindTable(
+						schema.Tables, fk.ParentSchema, fk.ParentTable);
 
-					FromSchema = fk.ParentSchema,
-					FromTable = fk.ParentTable,
-					ToSchema = fk.ReferencedSchema,
-					ToTable = fk.ReferencedTable,
+					var toTable = FindTable(
+						schema.Tables, fk.ReferencedSchema, fk.ReferencedTable);
 
-					Columns = columns,
+					var columns = fk.Columns
+						.OrderBy(c => c.KeyPosition)
+						.Select(c => new DatabaseRelationshipColumn
+						{
+							FromColumn = c.ParentColumn,
+							ToColumn = c.ReferencedColumn,
+							KeyPosition = c.KeyPosition
+						})
+						.ToList();
 
-					IsEnabled = !fk.IsDisabled,
-					IsTrusted = !fk.IsNotTrusted,
+					var fromUnique = fromTable != null &&
+						HasExactUniqueKey(
+							fromTable,
+							columns.Select(c => c.FromColumn).ToList());
 
-					IsFromSideUnique = fromUnique,
-					IsToSideUnique = toUnique,
+					var toUnique = toTable != null &&
+						HasExactUniqueKey(
+							toTable,
+							columns.Select(c => c.ToColumn).ToList());
 
-					FromToCardinality = GetCardinality(
-						fromUnique,
-						toUnique),
-
-					ToFromCardinality = GetCardinality(
-						toUnique,
-						fromUnique)
-				};
-			})
-			.ToList();
+					return new DatabaseRelationship
+					{
+						ConstraintName = fk.ConstraintName,
+						RelationshipSource = "FOREIGN_KEY",
+						FromSchema = fk.ParentSchema,
+						FromTable = fk.ParentTable,
+						ToSchema = fk.ReferencedSchema,
+						ToTable = fk.ReferencedTable,
+						Columns = columns,
+						IsEnabled = !fk.IsDisabled,
+						IsTrusted = !fk.IsNotTrusted,
+						IsFromSideUnique = fromUnique,
+						IsToSideUnique = toUnique,
+						FromToCardinality = GetCardinality(fromUnique, toUnique),
+						ToFromCardinality = GetCardinality(toUnique, fromUnique)
+					};
+				})
+				.ToList()
+			: [];
 
 		if (!string.IsNullOrWhiteSpace(datasetKey))
 		{
