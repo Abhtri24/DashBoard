@@ -257,7 +257,6 @@ public sealed class DashboardWidgetQueryService
 			.Select(id => id!.Value)
 			.ToHashSet();
 
-		referencedTableIds.Add(primaryTable.DatasetTableId);
 
 		var selectedTables = datasetTables
 			.Where(x => referencedTableIds.Contains(x.DatasetTableId))

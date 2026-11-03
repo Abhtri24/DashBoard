@@ -160,17 +160,42 @@ public sealed class AutomaticJoinPlannerService
 				.Where(c => c.Path.Count == shortestLength)
 				.ToList();
 
-			// Never guess between equally short alternatives.
-			if (shortestPaths.Count != 1)
+			// Ambiguity only exists when the same target and
+			// connected destination have multiple equally short paths.
+			var ambiguousPath = shortestPaths
+				.GroupBy(c => new
+				{
+					TargetKey = GetTableKey(
+						c.Target.Schema,
+						c.Target.Table),
+
+					c.ConnectedKey
+				})
+				.FirstOrDefault(group => group.Count() > 1);
+
+			if (ambiguousPath != null)
 			{
 				result.Errors.Add(
-					"Multiple equally short join paths were found. " +
+					$"Multiple equally short paths connect " +
+					$"'{ambiguousPath.Key.TargetKey}' to " +
+					$"'{ambiguousPath.Key.ConnectedKey}'. " +
 					"An explicit relationship choice is required.");
 
 				return result;
 			}
 
-			var chosen = shortestPaths[0];
+			// Different target tables may legitimately have paths
+			// of the same length. Connect one at a time, then
+			// recalculate paths using the expanded join plan.
+			var chosen = shortestPaths
+				.OrderBy(c => selectedTables.FindIndex(t =>
+					Matches(
+						t.Schema,
+						t.Table,
+						c.Target.Schema,
+						c.Target.Table)))
+				.ThenBy(c => c.ConnectedKey, StringComparer.OrdinalIgnoreCase)
+				.First();
 
 			var currentSchema = chosen.Target.Schema;
 			var currentTable = chosen.Target.Table;

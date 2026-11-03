@@ -1,458 +1,296 @@
 @page
 @model IndexModel
-
 @{
     ViewData["Title"] = "Dashboard";
 }
 
-<link rel="stylesheet"
-      href="~/css/dashboard.css"
-      asp-append-version="true" />
+<link rel="stylesheet" href="~/css/dashboard.css" asp-append-version="true" />
 
-<div class="container-fluid px-0">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+<div class="container-fluid px-0 dashboard-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
         <div>
             <h2 class="h4 mb-1" id="dashboardTitle">Dashboard</h2>
-            <p class="text-secondary mb-0" id="dashboardDescription">
-                Loading dashboard...
-            </p>
+            <p class="text-secondary mb-0" id="dashboardDescription">Loading dashboard...</p>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <label class="visually-hidden" for="dashboardSelect">Dashboard</label>
+            <select id="dashboardSelect" class="form-select" style="min-width:210px" aria-label="Select dashboard">
+                <option value="SALES_MAIN">Sales Dashboard</option>
+            </select>
+            <label class="visually-hidden" for="departmentSelect">Department preview</label>
+            <select id="departmentSelect" class="form-select" style="width:auto" aria-label="Department preview">
+                <option value="sales">Sales</option>
+                <option value="finance">Finance</option>
+                <option value="hr">HR</option>
+                <option value="operations">Operations</option>
+            </select>
+            <button id="editLayoutButton" class="btn btn-outline-secondary" type="button">Edit layout</button>
+            <button id="addCardButton" class="btn btn-primary" type="button"><span aria-hidden="true">＋</span> Add card</button>
         </div>
     </div>
 
-    <div id="dashboardError"
-         class="alert alert-danger d-none"
-         role="alert"></div>
+    <div id="dashboardNotice" class="alert alert-info d-none" role="status"></div>
+    <div id="dashboardError" class="alert alert-danger d-none" role="alert"></div>
+    <div id="dashboardLoading" class="text-secondary py-4">Loading dashboard...</div>
+    <div id="dashboardWidgets" class="dashboard-grid d-none"></div>
+</div>
 
-    <div id="dashboardLoading" class="text-secondary py-4">
-        Loading dashboard...
-    </div>
+<div class="modal fade" id="widgetModal" tabindex="-1" aria-labelledby="widgetModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <form id="widgetForm">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title" id="widgetModalTitle">Add dashboard card</h5>
+                        <div class="small text-secondary">Configure a widget using the existing dataset metadata and query API.</div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editingWidgetKey" />
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label for="widgetTitleInput" class="form-label">Card title</label>
+                            <input id="widgetTitleInput" class="form-control" maxlength="100" required placeholder="e.g. Revenue by Region" />
+                        </div>
+                        <div class="col-md-4">
+                            <label for="widgetTypeSelect" class="form-label">Visualization</label>
+                            <select id="widgetTypeSelect" class="form-select">
+                                <option value="KPI">KPI</option>
+                                <option value="BAR">Bar chart</option>
+                                <option value="LINE">Line chart</option>
+                                <option value="PIE">Pie chart</option>
+                                <option value="TABLE">Table</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="datasetSelect" class="form-label">Dataset</label>
+                            <select id="datasetSelect" class="form-select">
+                                <option value="sales">Sales</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4" id="dimensionField">
+                            <label for="dimensionSelect" class="form-label">Group by</label>
+                            <select id="dimensionSelect" class="form-select"></select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="measureSelect" class="form-label">Measure</label>
+                            <select id="measureSelect" class="form-select"></select>
+                        </div>
+                    </div>
 
-    <div id="dashboardWidgets"
-         class="dashboard-grid d-none">
+                    <hr class="my-4" />
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <h6 class="mb-0">Filters</h6>
+                            <small class="text-secondary">Optional conditions applied to the preview and saved widget configuration.</small>
+                        </div>
+                        <button id="addWidgetFilter" type="button" class="btn btn-sm btn-outline-primary">Add filter</button>
+                    </div>
+                    <div id="widgetFilters" class="d-flex flex-column gap-2"></div>
+
+                    <div class="d-flex justify-content-between align-items-center mt-4 mb-2">
+                        <h6 class="mb-0">Preview</h6>
+                        <button id="previewWidgetButton" type="button" class="btn btn-sm btn-outline-primary">Run preview</button>
+                    </div>
+                    <div id="widgetPreviewStatus" class="small text-secondary mb-2">Choose a measure and run preview.</div>
+                    <div id="widgetPreview" class="border rounded p-3" style="min-height:110px; overflow:auto">
+                        <span class="text-secondary">Your preview will appear here.</span>
+                    </div>
+                    <div id="widgetModalError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="applyWidgetButton">Add to dashboard</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
 <style>
-    .dashboard-grid {
-        display: grid;
-        grid-template-columns: repeat(12, minmax(0, 1fr));
-        gap: 1rem;
-        align-items: stretch;
-    }
-
-    .dashboard-widget {
-        min-width: 0;
-    }
-
-    .dashboard-widget .card {
-        height: 100%;
-        border: 0;
-        box-shadow: 0 .125rem .5rem rgba(0, 0, 0, .07);
-    }
-
-    .dashboard-widget .chart-container {
-        position: relative;
-        height: 280px;
-    }
-
-    .dashboard-widget canvas {
-        max-width: 100%;
-    }
-
-    .widget-kpi-value {
-        font-size: 2rem;
-        font-weight: 600;
-        overflow-wrap: anywhere;
-    }
-
-    .widget-table-container {
-        overflow-x: auto;
-    }
-
-    @@media (max-width: 768px) {
-        .dashboard-widget {
-            grid-column: span 12 !important;
-        }
-    }
+    .dashboard-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:1rem;align-items:stretch}
+    .dashboard-widget{min-width:0;min-height:180px}
+    .dashboard-widget .card{height:100%;border:0;box-shadow:0 .125rem .5rem rgba(0,0,0,.07)}
+    .dashboard-widget .card-body{min-width:0}
+    .dashboard-widget .chart-container{position:relative;height:280px}
+    .dashboard-widget canvas{max-width:100%}
+    .widget-kpi-value{font-size:clamp(1.5rem,2.4vw,2.25rem);font-weight:600;overflow-wrap:anywhere;line-height:1.2}
+    .widget-table-container{overflow-x:auto}
+    .widget-actions{opacity:.65}
+    .dashboard-widget:hover .widget-actions,.dashboard-edit-mode .widget-actions{opacity:1}
+    .dashboard-edit-mode .dashboard-widget{outline:1px dashed #9ca3af;outline-offset:3px}
+    .widget-drag-handle{cursor:grab;user-select:none}
+    .widget-dragging{opacity:.45}
+    .preview-kpi{font-size:1.8rem;font-weight:600}
+    @@media(max-width:768px){.dashboard-widget{grid-column:span 12!important}}
 </style>
 
 @section Scripts {
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+(() => {
+    const $ = id => document.getElementById(id);
+    const dashboardSelect = $('dashboardSelect');
+    const departmentSelect = $('departmentSelect');
+    const widgetsHost = $('dashboardWidgets');
+    const loading = $('dashboardLoading');
+    const errorBox = $('dashboardError');
+    const notice = $('dashboardNotice');
+    const modalElement = $('widgetModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
 
-    <script>
-        (() => {
-            const dashboardKey = "SALES_MAIN";
+    let currentDashboard = null;
+    let widgets = [];
+    let dimensions = [];
+    let measures = [];
+    let lastPreviewRows = [];
+    let editMode = false;
+    let chartInstances = [];
 
-            // Prototype preview value only.
-            // Do not use this value as an authorization mechanism.
-            const department = "sales";
+    const dashboardUrl = key => `/api/dash/dashboard/${encodeURIComponent(key)}?department=${encodeURIComponent(departmentSelect.value)}`;
+    const widgetUrl = (key, widgetKey) => `/api/dash/dashboard/${encodeURIComponent(key)}/widget/${encodeURIComponent(widgetKey)}?department=${encodeURIComponent(departmentSelect.value)}&page=1&pageSize=100`;
 
-            const dashboardUrl =
-                `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}` +
-                `?department=${encodeURIComponent(department)}`;
+    function showError(message, target = errorBox) { target.textContent = message; target.classList.remove('d-none'); }
+    function clearError(target = errorBox) { target.textContent = ''; target.classList.add('d-none'); }
+    function el(tag, className, text) { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined && text !== null) node.textContent = text; return node; }
+    async function request(url, options = {}) {
+        const response = await fetch(url, { headers: { Accept:'application/json', ...(options.headers || {}) }, ...options });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(body?.error || body?.message || `Request failed (${response.status}).`);
+        return body;
+    }
+    function keyOf(item) { return item?.columnKey || item?.ColumnKey || ''; }
+    function labelOf(item) { return item?.labelOverride || item?.LabelOverride || item?.label || item?.Label || keyOf(item); }
+    function getRows(result) {
+        if (Array.isArray(result)) return result;
+        return result?.value || result?.Value || result?.rows || result?.Rows || [];
+    }
+    function getProp(obj, lower, upper) { return obj?.[lower] ?? obj?.[upper]; }
+    function measureOf(widget) { return getProp(widget,'measures','Measures')?.[0] || null; }
+    function dimensionOf(widget) { return getProp(widget,'dimensions','Dimensions')?.[0] || null; }
+    function findValue(row, key) { const actual = Object.keys(row || {}).find(k => k.toLowerCase() === String(key || '').toLowerCase()); return actual ? row[actual] : undefined; }
+    function format(value) { return value == null ? '—' : typeof value === 'number' ? new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(value) : String(value); }
 
-            const widgetDataUrl = widgetKey =>
-                `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}` +
-                `/widget/${encodeURIComponent(widgetKey)}` +
-                `?department=${encodeURIComponent(department)}` +
-                `&page=1&pageSize=100`;
-
-            const container = document.getElementById("dashboardWidgets");
-            const loading = document.getElementById("dashboardLoading");
-            const errorElement = document.getElementById("dashboardError");
-
-            const chartInstances = [];
-
-            function showError(message) {
-                errorElement.textContent = message;
-                errorElement.classList.remove("d-none");
+    async function loadDashboards() {
+        // Dashboard list API is added alongside this page. Keep the current dashboard
+        // usable if the list endpoint is not yet present in the running local build.
+        try {
+            const list = await request(`/api/dash/dashboards?department=${encodeURIComponent(departmentSelect.value)}`);
+            const items = Array.isArray(list) ? list : (list?.value || list?.dashboards || list?.Dashboards || []);
+            if (items.length) {
+                const selected = dashboardSelect.value;
+                dashboardSelect.replaceChildren();
+                items.forEach(item => dashboardSelect.add(new Option(item.displayName || item.DisplayName || item.dashboardKey || item.DashboardKey, item.dashboardKey || item.DashboardKey)));
+                if (items.some(x => (x.dashboardKey || x.DashboardKey) === selected)) dashboardSelect.value = selected;
             }
-
-            function createElement(tag, className, text) {
-                const element = document.createElement(tag);
-
-                if (className) {
-                    element.className = className;
-                }
-
-                if (text !== undefined && text !== null) {
-                    element.textContent = text;
-                }
-
-                return element;
-            }
-
-            async function getJson(url, options = {}) {
-                const response = await fetch(url, {
-                    headers: {
-                        "Accept": "application/json",
-                        ...(options.headers || {})
-                    },
-                    ...options
-                });
-
-                if (!response.ok) {
-                    const body = await response.json().catch(() => null);
-                    throw new Error(
-                        body?.error ||
-                        body?.message ||
-                        `Request failed (${response.status}).`
-                    );
-                }
-
-                return response.json();
-            }
-
-            function getColumnKey(item) {
-                return item?.columnKey || item?.ColumnKey || "";
-            }
-
-            function getLabel(item) {
-                return item?.labelOverride ||
-                    item?.LabelOverride ||
-                    getColumnKey(item);
-            }
-
-            function getRows(result) {
-                return result?.rows || result?.Rows || [];
-            }
-
-            function getFirstMeasure(widget) {
-                return widget.measures?.[0] ||
-                    widget.Measures?.[0] ||
-                    null;
-            }
-
-            function getFirstDimension(widget) {
-                return widget.dimensions?.[0] ||
-                    widget.Dimensions?.[0] ||
-                    null;
-            }
-
-            function getValue(row, key) {
-                if (!row || !key) return undefined;
-
-                // SQL aliases may differ in casing.
-                const actualKey = Object.keys(row).find(
-                    candidate => candidate.toLowerCase() === key.toLowerCase()
-                );
-
-                return actualKey ? row[actualKey] : undefined;
-            }
-
-            function formatValue(value) {
-                if (value === null || value === undefined) return "—";
-
-                if (typeof value === "number") {
-                    return new Intl.NumberFormat().format(value);
-                }
-
-                return String(value);
-            }
-
-            function createWidgetShell(widget) {
-                const widgetElement = createElement(
-                    "section",
-                    "dashboard-widget"
-                );
-
-                const columnSpan =
-                    Number(widget.gridColumnSpan ?? widget.GridColumnSpan ?? 12);
-
-                const rowSpan =
-                    Number(widget.gridRowSpan ?? widget.GridRowSpan ?? 1);
-
-                widgetElement.style.gridColumn =
-                    `span ${Math.min(12, Math.max(1, columnSpan))}`;
-
-                widgetElement.style.gridRow =
-                    `span ${Math.max(1, rowSpan)}`;
-
-                const card = createElement("div", "card");
-                const body = createElement("div", "card-body");
-
-                const title = createElement(
-                    "h3",
-                    "h6 mb-3",
-                    widget.title || widget.Title || "Untitled widget"
-                );
-
-                body.appendChild(title);
-                card.appendChild(body);
-                widgetElement.appendChild(card);
-
-                return { widgetElement, body };
-            }
-
-            function renderKpi(body, widget, rows) {
-                const measure = getFirstMeasure(widget);
-                const key = getColumnKey(measure);
-
-                const value = rows.length
-                    ? getValue(rows[0], key)
-                    : null;
-
-                const valueElement = createElement(
-                    "div",
-                    "widget-kpi-value",
-                    formatValue(value)
-                );
-
-                body.appendChild(valueElement);
-            }
-
-            function renderTable(body, rows) {
-                if (!rows.length) {
-                    body.appendChild(
-                        createElement("p", "text-secondary mb-0", "No data available.")
-                    );
-                    return;
-                }
-
-                const columns = Object.keys(rows[0]);
-
-                const wrapper = createElement("div", "widget-table-container");
-                const table = createElement("table", "table table-sm table-hover mb-0");
-                const thead = document.createElement("thead");
-                const headerRow = document.createElement("tr");
-
-                columns.forEach(column => {
-                    headerRow.appendChild(
-                        createElement("th", "", column)
-                    );
-                });
-
-                thead.appendChild(headerRow);
-                table.appendChild(thead);
-
-                const tbody = document.createElement("tbody");
-
-                rows.forEach(row => {
-                    const tr = document.createElement("tr");
-
-                    columns.forEach(column => {
-                        tr.appendChild(
-                            createElement("td", "", formatValue(row[column]))
-                        );
-                    });
-
-                    tbody.appendChild(tr);
-                });
-
-                table.appendChild(tbody);
-                wrapper.appendChild(table);
-                body.appendChild(wrapper);
-            }
-
-            function renderChart(body, widget, rows, type) {
-                const measure = getFirstMeasure(widget);
-                const dimension = getFirstDimension(widget);
-
-                const measureKey = getColumnKey(measure);
-                const dimensionKey = getColumnKey(dimension);
-
-                if (!measureKey || !dimensionKey) {
-                    body.appendChild(
-                        createElement(
-                            "p",
-                            "text-secondary mb-0",
-                            "This chart needs one measure and one dimension."
-                        )
-                    );
-                    return;
-                }
-
-                if (!rows.length) {
-                    body.appendChild(
-                        createElement("p", "text-secondary mb-0", "No data available.")
-                    );
-                    return;
-                }
-
-                const chartContainer = createElement("div", "chart-container");
-                const canvas = document.createElement("canvas");
-
-                chartContainer.appendChild(canvas);
-                body.appendChild(chartContainer);
-
-                const labels = rows.map(row =>
-                    formatValue(getValue(row, dimensionKey))
-                );
-
-                const values = rows.map(row =>
-                    Number(getValue(row, measureKey) ?? 0)
-                );
-
-                const chartType = type.toLowerCase() === "pie"
-                    ? "pie"
-                    : type.toLowerCase();
-
-                const chart = new Chart(canvas, {
-                    type: chartType,
-                    data: {
-                        labels,
-                        datasets: [{
-                            label: getLabel(measure),
-                            data: values,
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: chartType === "pie"
-                            }
-                        },
-                        scales: chartType === "pie"
-                            ? {}
-                            : {
-                                y: {
-                                    beginAtZero: true
-                                }
-                            }
-                    }
-                });
-
-                chartInstances.push(chart);
-            }
-
-            async function renderWidget(widget) {
-                const { widgetElement, body } = createWidgetShell(widget);
-
-                container.appendChild(widgetElement);
-
-                try {
-                    const widgetKey = widget.widgetKey || widget.WidgetKey;
-
-                    const result = await getJson(widgetDataUrl(widgetKey), {
-                        method: "POST"
-                    });
-
-                    const rows = getRows(result);
-                    const type = (
-                        widget.widgetType ||
-                        widget.WidgetType ||
-                        ""
-                    ).toUpperCase();
-
-                    switch (type) {
-                        case "KPI":
-                            renderKpi(body, widget, rows);
-                            break;
-
-                        case "TABLE":
-                            renderTable(body, rows);
-                            break;
-
-                        case "BAR":
-                        case "LINE":
-                        case "PIE":
-                            renderChart(body, widget, rows, type);
-                            break;
-
-                        default:
-                            body.appendChild(
-                                createElement(
-                                    "p",
-                                    "text-secondary mb-0",
-                                    `Unsupported widget type: ${type || "unknown"}`
-                                )
-                            );
-                    }
-                } catch (error) {
-                    body.appendChild(
-                        createElement(
-                            "div",
-                            "alert alert-danger small mb-0",
-                            error.message
-                        )
-                    );
-                }
-            }
-
-            async function loadDashboard() {
-                try {
-                    const dashboard = await getJson(dashboardUrl);
-
-                    document.getElementById("dashboardTitle").textContent =
-                        dashboard.displayName ||
-                        dashboard.DisplayName ||
-                        "Dashboard";
-
-                    document.getElementById("dashboardDescription").textContent =
-                        dashboard.description ||
-                        dashboard.Description ||
-                        "";
-
-                    const widgets = dashboard.widgets || dashboard.Widgets || [];
-
-                    loading.classList.add("d-none");
-                    container.classList.remove("d-none");
-
-                    if (!widgets.length) {
-                        container.appendChild(
-                            createElement(
-                                "p",
-                                "text-secondary",
-                                "No widgets are configured for this dashboard."
-                            )
-                        );
-                        return;
-                    }
-
-                    // Preserve the order supplied by the configuration service.
-                    for (const widget of widgets) {
-                        await renderWidget(widget);
-                    }
-                } catch (error) {
-                    loading.classList.add("d-none");
-                    showError(error.message);
-                }
-            }
-
-            loadDashboard();
-        })();
-    </script>
+        } catch (e) { console.info('Dashboard list endpoint is not available yet; using the current dashboard key.', e.message); }
+    }
+
+    function destroyCharts() { chartInstances.forEach(c => c.destroy()); chartInstances = []; }
+    function setGridSpan(node, widget) {
+        const col = Number(getProp(widget,'gridColumnSpan','GridColumnSpan') || (String(getProp(widget,'widgetType','WidgetType')).toUpperCase()==='KPI' ? 3 : 6));
+        const row = Number(getProp(widget,'gridRowSpan','GridRowSpan') || 1);
+        node.style.gridColumn = `span ${Math.max(1,Math.min(12,col))}`;
+        node.style.gridRow = `span ${Math.max(1,row)}`;
+    }
+    function makeWidgetShell(widget, index) {
+        const section = el('section','dashboard-widget'); setGridSpan(section,widget);
+        section.dataset.index = index;
+        const card = el('div','card'); const body = el('div','card-body');
+        const header = el('div','d-flex justify-content-between align-items-start gap-2 mb-3');
+        const title = el('h3','h6 mb-0',getProp(widget,'title','Title') || 'Untitled card');
+        const actions = el('div','dropdown widget-actions');
+        const menuButton = el('button','btn btn-sm btn-light dropdown-toggle'); menuButton.type='button'; menuButton.dataset.bsToggle='dropdown'; menuButton.setAttribute('aria-label','Widget actions'); menuButton.textContent='⋯';
+        const menu = el('ul','dropdown-menu dropdown-menu-end');
+        const edit = el('button','dropdown-item','Edit'); edit.type='button'; edit.addEventListener('click',()=>openWidgetModal(widget));
+        const remove = el('button','dropdown-item text-danger','Delete'); remove.type='button'; remove.addEventListener('click',()=>deleteWidget(index));
+        const editLi=el('li'); editLi.append(edit); const deleteLi=el('li'); deleteLi.append(remove); menu.append(editLi,deleteLi);
+        actions.append(menuButton,menu); header.append(title,actions); body.append(header); card.append(body); section.append(card);
+        if (editMode) { section.draggable=true; section.classList.add('widget-draggable'); }
+        return {section,body};
+    }
+    function renderKpi(body,widget,rows) {
+        const m=measureOf(widget); const key=keyOf(m); const value=rows.length?findValue(rows[0],key):null;
+        body.append(el('div','widget-kpi-value',format(value)));
+    }
+    function renderTable(body,rows) {
+        if(!rows.length){body.append(el('p','text-secondary mb-0','No data available.'));return;}
+        const table=el('table','table table-sm table-hover mb-0'); const head=el('thead','table-light'); const hr=document.createElement('tr');
+        Object.keys(rows[0]).forEach(k=>hr.append(el('th','',k))); head.append(hr); table.append(head);
+        const tb=document.createElement('tbody'); rows.forEach(row=>{const tr=document.createElement('tr');Object.keys(rows[0]).forEach(k=>tr.append(el('td','',format(row[k]))));tb.append(tr);}); table.append(tb);
+        const wrap=el('div','widget-table-container');wrap.append(table);body.append(wrap);
+    }
+    function renderChart(body,widget,rows,type) {
+        const m=measureOf(widget),d=dimensionOf(widget),mk=keyOf(m),dk=keyOf(d);
+        if(!mk||!dk||!rows.length){body.append(el('p','text-secondary mb-0',rows.length?'Chart needs a measure and dimension.':'No data available.'));return;}
+        const wrap=el('div','chart-container');const canvas=document.createElement('canvas');wrap.append(canvas);body.append(wrap);
+        const chart=new Chart(canvas,{type:type.toLowerCase(),data:{labels:rows.map(r=>String(findValue(r,dk)??'')),datasets:[{label:labelOf(m),data:rows.map(r=>Number(findValue(r,mk)??0)),borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:type==='PIE'}},scales:type==='PIE'?{}:{y:{beginAtZero:true}}}});
+        chartInstances.push(chart);
+    }
+    async function renderOne(widget,index) {
+        const {section,body}=makeWidgetShell(widget,index);widgetsHost.append(section);
+        try {
+            const result=await request(widgetUrl(dashboardSelect.value,getProp(widget,'widgetKey','WidgetKey')),{method:'POST'});
+            const rows=getRows(result); const type=String(getProp(widget,'widgetType','WidgetType')||'').toUpperCase();
+            if(type==='KPI')renderKpi(body,widget,rows);else if(type==='TABLE')renderTable(body,rows);else if(['BAR','LINE','PIE'].includes(type))renderChart(body,widget,rows,type);else body.append(el('p','text-secondary','Unsupported widget type: '+type));
+        } catch(e) { body.append(el('div','alert alert-danger small mb-0',e.message)); }
+    }
+    async function loadDashboard() {
+        clearError(); loading.classList.remove('d-none'); widgetsHost.classList.add('d-none'); widgetsHost.replaceChildren(); destroyCharts();
+        try {
+            const data=await request(dashboardUrl(dashboardSelect.value));currentDashboard=data;widgets=[...(getProp(data,'widgets','Widgets')||[])];
+            $('dashboardTitle').textContent=getProp(data,'displayName','DisplayName')||'Dashboard';$('dashboardDescription').textContent=getProp(data,'description','Description')||'';
+            loading.classList.add('d-none');widgetsHost.classList.remove('d-none');
+            if(!widgets.length){widgetsHost.append(el('p','text-secondary','No cards are configured. Use Add card to create one.'));return;}
+            for(let i=0;i<widgets.length;i++) await renderOne(widgets[i],i);
+            wireDragAndDrop();
+        } catch(e){loading.classList.add('d-none');showError(e.message);}
+    }
+
+    async function loadMetadata() {
+        const dataset=$('datasetSelect').value;
+        const metadata=await request(`/api/dash/meta/datasets?dataset=${encodeURIComponent(dataset)}`);
+        dimensions=metadata.dimensions||metadata.Dimensions||[];measures=metadata.measures||metadata.Measures||[];
+        const d=$('dimensionSelect'),m=$('measureSelect');d.replaceChildren(new Option('(No grouping)',''));m.replaceChildren();
+        dimensions.forEach(x=>d.add(new Option(x.label||x.Label,x.key||x.Key)));
+        measures.forEach(x=>m.add(new Option(x.label||x.Label,x.key||x.Key)));
+        updateDimensionVisibility();
+    }
+    function updateDimensionVisibility(){const type=$('widgetTypeSelect').value;$('dimensionField').classList.toggle('d-none',type==='KPI');$('dimensionSelect').required=type!=='KPI';}
+    function addFilterRow(existing=null) {
+        const row=el('div','row g-2 align-items-center widget-filter-row');const field=el('select','form-select');const op=el('select','form-select');const val=el('input','form-control');val.placeholder='Value';
+        dimensions.forEach(x=>field.add(new Option(x.label||x.Label,x.key||x.Key)));
+        [['eq','Equals'],['neq','Does not equal'],['gt','Greater than'],['gte','At least'],['lt','Less than'],['lte','At most']].forEach(x=>op.add(new Option(x[1],x[0])));
+        const remove=el('button','btn btn-outline-secondary','Remove');remove.type='button';remove.addEventListener('click',()=>row.remove());
+        const a=el('div','col-md-4'),b=el('div','col-md-3'),c=el('div','col-md-3'),d=el('div','col-md-2');a.append(field);b.append(op);c.append(val);d.append(remove);row.append(a,b,c,d);
+        if(existing){field.value=existing.dimension||existing.Dimension||existing.columnKey||'';op.value=existing.operator||existing.Operator||'eq';val.value=existing.value||existing.Value||existing.filterValue||'';}
+        $('widgetFilters').append(row);
+    }
+    function collectFilters(){const filters=[];document.querySelectorAll('.widget-filter-row').forEach(row=>{const value=row.querySelector('input').value.trim();if(!value)throw new Error('Enter a value for each filter or remove the empty filter.');filters.push({dimension:row.querySelectorAll('select')[0].value,operator:row.querySelectorAll('select')[1].value,value});});return filters;}
+    function queryPayload(){const type=$('widgetTypeSelect').value,dimension=$('dimensionSelect').value,measure=$('measureSelect').value;if(!measure)throw new Error('Select a measure.');if(type!=='KPI'&&!dimension)throw new Error('Select a dimension for this visualization.');return{dataset:$('datasetSelect').value,dimensions:dimension?[dimension]:[],measures:[measure],filters:collectFilters(),sort:[{field:measure,direction:'desc'}],page:1,pageSize:100};}
+    async function runPreview(){clearError($('widgetModalError'));$('previewWidgetButton').disabled=true;$('widgetPreviewStatus').textContent='Running query...';$('widgetPreview').replaceChildren();try{const result=await request('/api/dash/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(queryPayload())});lastPreviewRows=Array.isArray(result)?result:getRows(result);$('widgetPreviewStatus').textContent=`${lastPreviewRows.length} preview row(s).`;
+        const type=$('widgetTypeSelect').value;if(type==='KPI'){const val=lastPreviewRows.length?findValue(lastPreviewRows[0],$('measureSelect').value):null;$('widgetPreview').append(el('div','preview-kpi',format(val)));}
+        else if(type==='TABLE')renderTable($('widgetPreview'),lastPreviewRows);
+        else renderChart($('widgetPreview'),{measures:[{columnKey:$('measureSelect').value,labelOverride:$('measureSelect').selectedOptions[0]?.text}],dimensions:[{columnKey:$('dimensionSelect').value}]},lastPreviewRows,type);
+    }catch(e){showError(e.message,$('widgetModalError'));$('widgetPreviewStatus').textContent='Preview failed.';}finally{$('previewWidgetButton').disabled=false;}}
+
+    function openWidgetModal(widget=null){clearError($('widgetModalError'));$('widgetForm').reset();$('widgetFilters').replaceChildren();$('widgetPreview').replaceChildren(el('span','text-secondary','Your preview will appear here.'));$('widgetPreviewStatus').textContent='Choose fields and run preview.';$('editingWidgetKey').value=widget?getProp(widget,'widgetKey','WidgetKey'):'';$('widgetModalTitle').textContent=widget?'Edit dashboard card':'Add dashboard card';$('applyWidgetButton').textContent=widget?'Apply changes':'Add to dashboard';
+        $('widgetTitleInput').value=widget?getProp(widget,'title','Title'):'';$('widgetTypeSelect').value=widget?getProp(widget,'widgetType','WidgetType'):'KPI';$('datasetSelect').value=widget?getProp(widget,'datasetKey','DatasetKey'):'sales';
+        loadMetadata().then(()=>{const m=measureOf(widget),d=dimensionOf(widget);if(m)$('measureSelect').value=keyOf(m);if(d)$('dimensionSelect').value=keyOf(d);(getProp(widget,'filters','Filters')||[]).forEach(f=>addFilterRow(f));updateDimensionVisibility();}).catch(e=>showError(e.message,$('widgetModalError')));
+        modal.show();}
+
+    function localWidgetFromForm(){const type=$('widgetTypeSelect').value;const measureKey=$('measureSelect').value;const dimensionKey=$('dimensionSelect').value;const measure=measures.find(x=>(x.key||x.Key)===measureKey);const dimension=dimensions.find(x=>(x.key||x.Key)===dimensionKey);const filters=collectFilters();return{widgetId:0,widgetKey:$('editingWidgetKey').value||`local_${Date.now()}`,title:$('widgetTitleInput').value.trim(),widgetType:type,datasetKey:$('datasetSelect').value,position:widgets.length,gridColumnSpan:type==='KPI'?3:6,gridRowSpan:1,measures:[{columnKey:measureKey,labelOverride:measure?.label||measure?.Label}],dimensions:dimensionKey?[{columnKey:dimensionKey,labelOverride:dimension?.label||dimension?.Label}]:[],filters:filters.map((f,i)=>({columnKey:f.dimension,operator:f.operator,filterValue:f.value,position:i}))};}
+    function applyLocalWidget(){const widget=localWidgetFromForm();const key=$('editingWidgetKey').value;const index=widgets.findIndex(w=>getProp(w,'widgetKey','WidgetKey')===key);if(index>=0)widgets[index]=widget;else widgets.push(widget);modal.hide();notice.textContent='This card is currently a local preview. It will not survive a refresh until the SQL persistence endpoints are implemented in Phase 3.';notice.classList.remove('d-none');renderLocalDashboard();}
+    async function renderLocalDashboard(){widgetsHost.replaceChildren();destroyCharts();widgetsHost.classList.remove('d-none');for(let i=0;i<widgets.length;i++){const w=widgets[i];if(String(getProp(w,'widgetKey','WidgetKey')).startsWith('local_')){const {section,body}=makeWidgetShell(w,i);widgetsHost.append(section);const payload={dataset:w.datasetKey,dimensions:w.dimensions.map(keyOf),measures:w.measures.map(keyOf),filters:w.filters.map(f=>({dimension:f.columnKey,operator:f.operator,value:f.filterValue})),sort:[{field:keyOf(w.measures[0]),direction:'desc'}],page:1,pageSize:100};try{const rows=getRows(await request('/api/dash/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));const type=w.widgetType;if(type==='KPI')renderKpi(body,w,rows);else if(type==='TABLE')renderTable(body,rows);else renderChart(body,w,rows,type);}catch(e){body.append(el('div','alert alert-danger small',e.message));}}else await renderOne(w,i);}wireDragAndDrop();}
+    function deleteWidget(index){if(!confirm('Remove this card from the current preview?'))return;widgets.splice(index,1);notice.textContent='Card removed from this page preview. SQL deletion will be enabled in Phase 3.';notice.classList.remove('d-none');renderLocalDashboard();}
+    function wireDragAndDrop(){if(!editMode)return;let dragged=null;widgetsHost.querySelectorAll('.dashboard-widget').forEach(node=>{node.draggable=true;node.addEventListener('dragstart',()=>{dragged=node;node.classList.add('widget-dragging');});node.addEventListener('dragend',()=>{node.classList.remove('widget-dragging');dragged=null;});node.addEventListener('dragover',e=>e.preventDefault());node.addEventListener('drop',e=>{e.preventDefault();if(!dragged||dragged===node)return;const from=Number(dragged.dataset.index),to=Number(node.dataset.index);const moved=widgets.splice(from,1)[0];widgets.splice(to,0,moved);widgets.forEach((w,i)=>w.position=i);renderLocalDashboard();});});}
+
+    $('addCardButton').addEventListener('click',()=>openWidgetModal());$('editLayoutButton').addEventListener('click',()=>{editMode=!editMode;$('editLayoutButton').textContent=editMode?'Done editing':'Edit layout';widgetsHost.classList.toggle('dashboard-edit-mode',editMode);wireDragAndDrop();});
+    $('widgetTypeSelect').addEventListener('change',updateDimensionVisibility);$('datasetSelect').addEventListener('change',()=>loadMetadata().catch(e=>showError(e.message,$('widgetModalError'))));$('addWidgetFilter').addEventListener('click',()=>addFilterRow());$('previewWidgetButton').addEventListener('click',runPreview);
+    $('widgetForm').addEventListener('submit',e=>{e.preventDefault();clearError($('widgetModalError'));if(!$('widgetTitleInput').value.trim()){showError('Enter a card title.',$('widgetModalError'));return;}if(!lastPreviewRows.length){showError('Run a successful preview before adding the card.',$('widgetModalError'));return;}try{applyLocalWidget();}catch(err){showError(err.message,$('widgetModalError'));}});
+    dashboardSelect.addEventListener('change',loadDashboard);departmentSelect.addEventListener('change',async()=>{await loadDashboards();await loadDashboard();});
+    (async()=>{await loadDashboards();await loadDashboard();})();
+})();
+</script>
 }

@@ -65,6 +65,38 @@ public class DashController : ControllerBase
 		_widgetQueryService = widgetQueryService;
 	}
 
+
+	[HttpGet("dashboards")]
+	public async Task<IActionResult> GetDashboards(
+	[FromQuery] string department,
+	CancellationToken cancellationToken)
+	{
+		if (string.IsNullOrWhiteSpace(department))
+			return BadRequest(new { error = "Department is required." });
+
+		await using var connection = await _db.OpenAsync();
+
+		const string sql = """
+        SELECT
+            DashboardKey,
+            DisplayName,
+            Description
+        FROM dash.Dashboard
+        WHERE DepartmentKey = @Department
+          AND IsActive = 1
+        ORDER BY IsDefault DESC, DisplayName;
+        """;
+
+		var dashboards = await connection.QueryAsync(
+			new CommandDefinition(
+				sql,
+				new { Department = department },
+				cancellationToken: cancellationToken));
+
+		return Ok(dashboards);
+	}
+
+
 	[HttpPost("dashboard/{dashboardKey}/widget/{widgetKey}")]
 	public async Task<IActionResult> GetWidgetData(
 		string dashboardKey,
