@@ -385,29 +385,22 @@ public sealed class QueryBuilderService
 		var validationPlan = new AggregationQueryPlan
 		{
 			Tables = joinPlan.Tables,
+
+			Joins = joinPlan.Joins.Select(j => new AggregationJoin
+			{
+				LeftAlias = j.LeftAlias,
+				RightAlias = j.RightAlias,
+				ConstraintName = j.ConstraintName
+			}).ToList(),
+
 			Dimensions = plan.Dimensions,
 			Measures = plan.Measures,
 			Filters = plan.Filters,
 			Sort = plan.Sort,
 			Page = plan.Page,
 			PageSize = plan.PageSize
-		};
-
-		var errors = _validator.Validate(validationPlan, schema);
-
-		if (errors.Count > 0)
-			throw new ArgumentException(string.Join("; ", errors));
-
-		var safety = _safety.Analyze(graph, validationPlan);
-
-		if (!safety.IsSafe)
-			throw new InvalidOperationException(
-				"Unsafe aggregation: " + string.Join("; ", safety.Warnings));
-
-		var generated = _sqlGenerator.Generate(plan, joinPlan, schema);
-
-		return await _executor.ExecuteAsync(generated, cancellationToken);
-	}
+		}
+	
 
 	private static string GetString(JsonElement element, string name)
 	{
