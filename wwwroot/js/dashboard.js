@@ -15,7 +15,6 @@
     let widgets = [];
     let dimensions = [];
     let measures = [];
-    let lastPreviewRows = [];
     let editMode = false;
     let chartInstances = [];
 
@@ -729,78 +728,14 @@
         };
     }
 
-    async function runPreview() {
-        clearError($('widgetModalError'));
-
-        $('previewWidgetButton').disabled = true;
-        $('widgetPreviewStatus').textContent = 'Running query...';
-        $('widgetPreview').replaceChildren();
-
-        try {
-            const result = await executeQuery(queryPayload());
-
-            lastPreviewRows = getRows(result);
-
-            $('widgetPreviewStatus').textContent =
-                `${lastPreviewRows.length} preview row(s).`;
-
-            const type = $('widgetTypeSelect').value;
-
-            if (type === 'KPI') {
-                const value = lastPreviewRows.length
-                    ? findValue(
-                        lastPreviewRows[0],
-                        $('measureSelect').value
-                    )
-                    : null;
-
-                $('widgetPreview').append(
-                    el('div', 'preview-kpi', format(value))
-                );
-            } else if (type === 'TABLE') {
-                renderTable(
-                    $('widgetPreview'),
-                    lastPreviewRows
-                );
-            } else {
-                renderChart(
-                    $('widgetPreview'),
-                    {
-                        measures: [{
-                            columnKey: $('measureSelect').value,
-                            labelOverride:
-                                $('measureSelect').selectedOptions[0]?.text
-                        }],
-                        dimensions: [{
-                            columnKey: $('dimensionSelect').value
-                        }]
-                    },
-                    lastPreviewRows,
-                    type
-                );
-            }
-        } catch (error) {
-            showError(error.message, $('widgetModalError'));
-            $('widgetPreviewStatus').textContent = 'Preview failed.';
-        } finally {
-            $('previewWidgetButton').disabled = false;
-        }
-    }
-
+  
     async function openWidgetModal(widget = null) {
         clearError($('widgetModalError'));
 
         $('widgetForm').reset();
         $('widgetFilters').replaceChildren();
 
-        $('widgetPreview').replaceChildren(
-            el('span', 'text-secondary', 'Your preview will appear here.')
-        );
-
-        $('widgetPreviewStatus').textContent =
-            'Choose fields and run preview.';
-
-        lastPreviewRows = [];
+      
 
         $('editingWidgetKey').value = widget
             ? getProp(widget, 'widgetKey', 'WidgetKey')
@@ -862,40 +797,43 @@
         const dimensionKey = $('dimensionSelect').value;
 
         const measure = measures.find(
-            item => (item.key || item.Key) === measureKey
+            x => (x.key || x.Key) === measureKey
         );
 
         const dimension = dimensions.find(
-            item => (item.key || item.Key) === dimensionKey
+            x => (x.key || x.Key) === dimensionKey
         );
 
         const filters = collectFilters();
 
         return {
             widgetId: 0,
-            widgetKey:
-                $('editingWidgetKey').value || `local_${Date.now()}`,
+            widgetKey: $('editingWidgetKey').value || `local_${Date.now()}`,
+
+            isLocalPreview: true,
+
             title: $('widgetTitleInput').value.trim(),
             widgetType: type,
             datasetKey: $('datasetSelect').value,
             position: widgets.length,
             gridColumnSpan: type === 'KPI' ? 3 : 6,
             gridRowSpan: 1,
+
             measures: [{
                 columnKey: measureKey,
                 labelOverride: measure?.label || measure?.Label
             }],
-            dimensions: dimensionKey
-                ? [{
-                    columnKey: dimensionKey,
-                    labelOverride: dimension?.label || dimension?.Label
-                }]
-                : [],
-            filters: filters.map((filter, index) => ({
-                columnKey: filter.dimension,
-                operator: filter.operator,
-                filterValue: filter.value,
-                position: index
+
+            dimensions: dimensionKey ? [{
+                columnKey: dimensionKey,
+                labelOverride: dimension?.label || dimension?.Label
+            }] : [],
+
+            filters: filters.map((f, i) => ({
+                columnKey: f.dimension,
+                operator: f.operator,
+                filterValue: f.value,
+                position: i
             }))
         };
     }
@@ -932,49 +870,63 @@
         for (let i = 0; i < widgets.length; i++) {
             const widget = widgets[i];
 
-            if (
-                String(
-                    getProp(widget, 'widgetKey', 'WidgetKey')
-                ).startsWith('local_')
-            ) {
+            if (getProp(widget, 'isLocalPreview', 'IsLocalPreview')) {
                 const { section, body } = makeWidgetShell(widget, i);
-
                 widgetsHost.append(section);
 
                 const payload = {
-                    dataset: widget.datasetKey,
-                    dimensions: widget.dimensions.map(keyOf),
-                    measures: widget.measures.map(keyOf),
-                    filters: widget.filters.map(filter => ({
-                        dimension: filter.columnKey,
-                        operator: filter.operator,
-                        value: filter.filterValue
+                    dataset: getProp(widget, 'datasetKey', 'DatasetKey'),
+                    dimensions: (getProp(widget, 'dimensions', 'Dimensions') || []).map(keyOf),
+                    measures: (getProp(widget, 'measures', 'Measures') || []).map(keyOf),
+
+                    filters: (getProp(widget, 'filters', 'Filters') || []).map(f => ({
+                        dimension: getProp(f, 'columnKey', 'ColumnKey'),
+                        operator: getProp(f, 'operator', 'Operator'),
+                        value: getProp(f, 'filterValue', 'FilterValue')
                     })),
+
                     sort: [{
-                        field: keyOf(widget.measures[0]),
+                        field: keyOf(measureOf(widget)),
                         direction: 'desc'
                     }],
+
                     page: 1,
                     pageSize: 100
                 };
 
                 try {
-                    const result = await executeQuery(payload);
+                    const result = await request('/api/dash/query', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
                     const rows = getRows(result);
-                    const type = widget.widgetType;
+
+                    const type = String(
+                        getProp(widget, 'widgetType', 'WidgetType') || ''
+                    ).toUpperCase();
 
                     if (type === 'KPI') {
                         renderKpi(body, widget, rows);
                     } else if (type === 'TABLE') {
                         renderTable(body, rows);
-                    } else {
+                    } else if (['BAR', 'LINE', 'PIE'].includes(type)) {
                         renderChart(body, widget, rows, type);
+                    } else {
+                        body.append(
+                            el('p', 'text-secondary', 'Unsupported widget type: ' + type)
+                        );
                     }
+
                 } catch (error) {
                     body.append(
                         el('div', 'alert alert-danger small', error.message)
                     );
                 }
+
             } else {
                 await renderOne(widget, i);
             }
@@ -1108,7 +1060,6 @@
     $('datasetSelect').addEventListener('change', async () => {
         clearError($('widgetModalError'));
         $('widgetFilters').replaceChildren();
-        lastPreviewRows = [];
 
         try {
             await loadMetadata();
@@ -1121,38 +1072,29 @@
         addFilterRow();
     });
 
-    $('previewWidgetButton').addEventListener(
-        'click',
-        runPreview
-    );
+   
 
-    $('widgetForm').addEventListener('submit', event => {
-        event.preventDefault();
+$('widgetForm').addEventListener('submit', event => {
+    event.preventDefault();
 
-        clearError($('widgetModalError'));
+    clearError($('widgetModalError'));
 
-        if (!$('widgetTitleInput').value.trim()) {
-            showError(
-                'Enter a card title.',
-                $('widgetModalError')
-            );
-            return;
-        }
+    if (!$('widgetTitleInput').value.trim()) {
+        showError(
+            'Enter a card title.',
+            $('widgetModalError')
+        );
+        return;
+    }
 
-        if (!lastPreviewRows.length) {
-            showError(
-                'Run a successful preview before adding the card.',
-                $('widgetModalError')
-            );
-            return;
-        }
-
-        try {
-            applyLocalWidget();
-        } catch (error) {
-            showError(error.message, $('widgetModalError'));
-        }
-    });
+    try {
+        // Validate the selected fields and filters before applying.
+        queryPayload();
+        applyLocalWidget();
+    } catch (error) {
+        showError(error.message, $('widgetModalError'));
+    }
+});
 
     dashboardSelect.addEventListener('change', loadDashboard);
 

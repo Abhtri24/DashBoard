@@ -1,5 +1,4 @@
-﻿
-using System.Text.Json;
+﻿using System.Text.Json;
 using Dapper;
 using DashBoard;
 using DashBoard.Models;
@@ -37,7 +36,6 @@ public sealed class QueryBuilderService
 		_executor = executor;
 	}
 
-	// Internal Dapper mapping only. These are not application/domain models.
 	private sealed class TableRow
 	{
 		public int DatasetTableId { get; set; }
@@ -69,7 +67,8 @@ public sealed class QueryBuilderService
 		await using var connection = await _db.OpenAsync();
 
 		const string sql = """
-            SELECT d.DatasetKey AS [key],
+            SELECT DISTINCT
+                   d.DatasetKey AS [key],
                    d.DisplayName AS [label]
             FROM dash.Dataset d
             INNER JOIN dash.DatasetAccess da
@@ -81,7 +80,7 @@ public sealed class QueryBuilderService
 		return await connection.QueryAsync(
 			new CommandDefinition(
 				sql,
-				new { Department = department },
+				new { Department = department.Trim() },
 				cancellationToken: cancellationToken));
 	}
 
@@ -90,39 +89,54 @@ public sealed class QueryBuilderService
 		string datasetKey,
 		CancellationToken cancellationToken = default)
 	{
+		if (string.IsNullOrWhiteSpace(department))
+			throw new ArgumentException("Department is required.");
+
+		if (string.IsNullOrWhiteSpace(datasetKey))
+			throw new ArgumentException("Dataset is required.");
+
 		await using var connection = await _db.OpenAsync();
 
-		const string accessSql = """
-            SELECT COUNT(1)
-            FROM dash.DatasetAccess
-            WHERE DatasetKey = @DatasetKey
-              AND Department = @Department;
-            """;
+		await EnsureDatasetAccessAsync(
+			connection,
+			department,
+			datasetKey,
+			cancellationToken);
 
-		var hasAccess = await connection.ExecuteScalarAsync<int>(
-			new CommandDefinition(
-				accessSql,
-				new { DatasetKey = datasetKey, Department = department },
-				cancellationToken: cancellationToken));
-
-		if (hasAccess == 0)
-			throw new UnauthorizedAccessException("Dataset not accessible.");
-
-		const string columnsSql = """
-            SELECT ColumnKey, ColumnName, Label, Role, DataType,
-                   Agg, SourceType, DatasetTableId, SourceColumn
-            FROM dash.DatasetColumn
-            WHERE DatasetKey = @DatasetKey
-            ORDER BY Label;
+		const string sql = """
+            SELECT
+                c.ColumnKey,
+                c.ColumnName,
+                c.Label,
+                c.Role,
+                c.DataType,
+                c.Agg,
+                c.SourceType,
+                c.DatasetTableId,
+                c.SourceColumn
+            FROM dash.DatasetColumn c
+            WHERE c.DatasetKey = @DatasetKey
+              AND (
+                    UPPER(COALESCE(c.SourceType, 'COLUMN')) <> 'COLUMN'
+                    OR EXISTS
+                    (
+                        SELECT 1
+                        FROM dash.DatasetTable t
+                        WHERE t.DatasetTableId = c.DatasetTableId
+                          AND t.DatasetKey = c.DatasetKey
+                          AND t.IsEnabled = 1
+                    )
+              )
+            ORDER BY c.Label;
             """;
 
 		var columns = (await connection.QueryAsync<ColumnRow>(
 			new CommandDefinition(
-				columnsSql,
+				sql,
 				new { DatasetKey = datasetKey },
 				cancellationToken: cancellationToken))).ToList();
 
-		// Query Builder currently exposes physical columns only.
+		// Query Builder currently supports physical columns only.
 		var usableColumns = columns
 			.Where(c => string.Equals(
 				c.SourceType ?? "COLUMN",
@@ -134,7 +148,8 @@ public sealed class QueryBuilderService
 		{
 			dimensions = usableColumns
 				.Where(c => string.Equals(
-					c.Role, "dimension",
+					c.Role,
+					"dimension",
 					StringComparison.OrdinalIgnoreCase))
 				.Select(c => new
 				{
@@ -145,7 +160,8 @@ public sealed class QueryBuilderService
 
 			measures = usableColumns
 				.Where(c => string.Equals(
-					c.Role, "measure",
+					c.Role,
+					"measure",
 					StringComparison.OrdinalIgnoreCase))
 				.Select(c => new
 				{
@@ -162,6 +178,9 @@ public sealed class QueryBuilderService
 		JsonElement request,
 		CancellationToken cancellationToken = default)
 	{
+		if (string.IsNullOrWhiteSpace(department))
+			throw new ArgumentException("Department is required.");
+
 		var datasetKey = GetString(request, "dataset");
 
 		if (string.IsNullOrWhiteSpace(datasetKey))
@@ -181,25 +200,23 @@ public sealed class QueryBuilderService
 
 		await using var connection = await _db.OpenAsync();
 
-		const string accessSql = """
-            SELECT COUNT(1)
-            FROM dash.DatasetAccess
-            WHERE DatasetKey = @DatasetKey
-              AND Department = @Department;
-            """;
-
-		var hasAccess = await connection.ExecuteScalarAsync<int>(
-			new CommandDefinition(
-				accessSql,
-				new { DatasetKey = datasetKey, Department = department },
-				cancellationToken: cancellationToken));
-
-		if (hasAccess == 0)
-			throw new UnauthorizedAccessException("Dataset not accessible.");
+		await EnsureDatasetAccessAsync(
+			connection,
+			department,
+			datasetKey,
+			cancellationToken);
 
 		const string columnsSql = """
-            SELECT ColumnKey, ColumnName, Label, Role, DataType,
-                   Agg, SourceType, DatasetTableId, SourceColumn
+            SELECT
+                ColumnKey,
+                ColumnName,
+                Label,
+                Role,
+                DataType,
+                Agg,
+                SourceType,
+                DatasetTableId,
+                SourceColumn
             FROM dash.DatasetColumn
             WHERE DatasetKey = @DatasetKey;
             """;
@@ -224,10 +241,7 @@ public sealed class QueryBuilderService
 			if (!columnsByKey.TryGetValue(key, out var column))
 				throw new ArgumentException($"Unknown field '{key}'.");
 
-			if (!string.Equals(
-				column.SourceType ?? "COLUMN",
-				"COLUMN",
-				StringComparison.OrdinalIgnoreCase))
+			if (!IsPhysicalColumn(column))
 				throw new ArgumentException(
 					$"Field '{key}' is not supported by Query Builder.");
 
@@ -236,38 +250,59 @@ public sealed class QueryBuilderService
 					$"Field '{key}' has no source table.");
 
 			if (dimensions.Contains(key, StringComparer.OrdinalIgnoreCase) &&
-				!string.Equals(column.Role, "dimension",
+				!string.Equals(
+					column.Role,
+					"dimension",
 					StringComparison.OrdinalIgnoreCase))
+			{
 				throw new ArgumentException($"'{key}' is not a dimension.");
+			}
 
 			if (measures.Contains(key, StringComparer.OrdinalIgnoreCase) &&
-				!string.Equals(column.Role, "measure",
+				!string.Equals(
+					column.Role,
+					"measure",
 					StringComparison.OrdinalIgnoreCase))
+			{
 				throw new ArgumentException($"'{key}' is not a measure.");
+			}
 		}
 
-		var filters = request.TryGetProperty("filters", out var filterArray)
-			&& filterArray.ValueKind == JsonValueKind.Array
-				? filterArray.EnumerateArray().ToList()
-				: [];
+		var filters = request.TryGetProperty("filters", out var filterArray) &&
+					  filterArray.ValueKind == JsonValueKind.Array
+			? filterArray.EnumerateArray().ToList()
+			: [];
 
 		foreach (var filter in filters)
 		{
 			var key = GetString(filter, "dimension");
 
 			if (!columnsByKey.TryGetValue(key, out var column) ||
-				!string.Equals(column.Role, "dimension",
+				!IsPhysicalColumn(column) ||
+				!string.Equals(
+					column.Role,
+					"dimension",
 					StringComparison.OrdinalIgnoreCase))
+			{
 				throw new ArgumentException(
 					$"Invalid filter dimension '{key}'.");
+			}
+
+			if (string.IsNullOrWhiteSpace(GetString(filter, "operator")))
+				throw new ArgumentException("A filter operator is required.");
 		}
 
 		var referencedKeys = selectedKeys
 			.Concat(filters.Select(f => GetString(f, "dimension")))
-			.Distinct(StringComparer.OrdinalIgnoreCase);
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
 
 		const string tablesSql = """
-            SELECT DatasetTableId, SchemaName, ObjectName, TableAlias
+            SELECT
+                DatasetTableId,
+                SchemaName,
+                ObjectName,
+                TableAlias
             FROM dash.DatasetTable
             WHERE DatasetKey = @DatasetKey
               AND IsEnabled = 1
@@ -282,6 +317,19 @@ public sealed class QueryBuilderService
 
 		var tablesById = tables.ToDictionary(t => t.DatasetTableId);
 
+		// Fail clearly instead of allowing a KeyNotFoundException when a
+		// selected column points to a disabled or unregistered table.
+		foreach (var key in referencedKeys)
+		{
+			var tableId = columnsByKey[key].DatasetTableId!.Value;
+
+			if (!tablesById.ContainsKey(tableId))
+			{
+				throw new ArgumentException(
+					$"The source table for field '{key}' is disabled or unavailable.");
+			}
+		}
+
 		var selectedTableIds = referencedKeys
 			.Select(key => columnsByKey[key].DatasetTableId!.Value)
 			.Distinct()
@@ -289,38 +337,34 @@ public sealed class QueryBuilderService
 
 		var selectedTables = tables
 			.Where(t => selectedTableIds.Contains(t.DatasetTableId))
-			.Select(t => new AggregationTable
-			{
-				Alias = string.IsNullOrWhiteSpace(t.TableAlias)
-					? $"t{t.DatasetTableId}"
-					: t.TableAlias!,
-				Schema = t.SchemaName,
-				Table = t.ObjectName
-			})
+			.Select(ToAggregationTable)
 			.ToList();
 
 		var aliasById = tables.ToDictionary(
 			t => t.DatasetTableId,
-			t => string.IsNullOrWhiteSpace(t.TableAlias)
-				? $"t{t.DatasetTableId}"
-				: t.TableAlias!);
+			GetTableAlias);
 
 		var schema = await _schemaDiscovery.DiscoverAsync(
-			null, cancellationToken);
+			null,
+			cancellationToken);
 
 		var graph = await _relationships.BuildGraphAsync(
-			null, cancellationToken, datasetKey);
+			null,
+			cancellationToken,
+			datasetKey);
 
 		var joinPlan = _joinPlanner.Plan(graph, selectedTables);
 
 		if (!joinPlan.IsValid)
+		{
 			throw new InvalidOperationException(
 				string.Join("; ", joinPlan.Errors));
+		}
 
 		var plan = new AggregationQueryPlan
 		{
 			// Keep only explicitly selected tables here.
-			// The planner adds any intermediate tables to joinPlan.
+			// The join planner may add intermediate tables to joinPlan.
 			Tables = selectedTables,
 			Page = page,
 			PageSize = pageSize
@@ -381,7 +425,8 @@ public sealed class QueryBuilderService
 			}
 		}
 
-		// Validate against the full resolved join plan.
+		// The validator and safety service must see the complete resolved
+		// join plan, including any intermediate tables.
 		var validationPlan = new AggregationQueryPlan
 		{
 			Tables = joinPlan.Tables,
@@ -399,13 +444,97 @@ public sealed class QueryBuilderService
 			Sort = plan.Sort,
 			Page = plan.Page,
 			PageSize = plan.PageSize
+		};
+
+		var errors = _validator.Validate(validationPlan, schema);
+
+		if (errors.Count > 0)
+		{
+			throw new ArgumentException(
+				string.Join("; ", errors));
 		}
-	
+
+		var safety = _safety.Analyze(graph, validationPlan);
+
+		if (!safety.IsSafe)
+		{
+			var details = safety.Warnings.Count > 0
+				? string.Join("; ", safety.Warnings)
+				: "The selected joins may produce incorrect aggregations.";
+
+			throw new InvalidOperationException(
+				$"Query failed aggregation-safety validation. {details}");
+		}
+
+		var generated = _sqlGenerator.Generate(
+			plan,
+			joinPlan,
+			schema);
+
+		return await _executor.ExecuteAsync(
+			generated,
+			cancellationToken);
+	}
+
+	private static async Task EnsureDatasetAccessAsync(
+		System.Data.IDbConnection connection,
+		string department,
+		string datasetKey,
+		CancellationToken cancellationToken)
+	{
+		const string sql = """
+            SELECT COUNT(1)
+            FROM dash.DatasetAccess
+            WHERE DatasetKey = @DatasetKey
+              AND Department = @Department;
+            """;
+
+		var hasAccess = await connection.ExecuteScalarAsync<int>(
+			new CommandDefinition(
+				sql,
+				new
+				{
+					DatasetKey = datasetKey,
+					Department = department.Trim()
+				},
+				cancellationToken: cancellationToken));
+
+		if (hasAccess == 0)
+			throw new UnauthorizedAccessException("Dataset not accessible.");
+	}
+
+	private static bool IsPhysicalColumn(ColumnRow column)
+	{
+		return string.Equals(
+			column.SourceType ?? "COLUMN",
+			"COLUMN",
+			StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static AggregationTable ToAggregationTable(TableRow table)
+	{
+		return new AggregationTable
+		{
+			Alias = GetTableAlias(table),
+			Schema = table.SchemaName,
+			Table = table.ObjectName
+		};
+	}
+
+	private static string GetTableAlias(TableRow table)
+	{
+		return string.IsNullOrWhiteSpace(table.TableAlias)
+			? $"t{table.DatasetTableId}"
+			: table.TableAlias!;
+	}
 
 	private static string GetString(JsonElement element, string name)
 	{
-		if (!element.TryGetProperty(name, out var value))
+		if (element.ValueKind != JsonValueKind.Object ||
+			!element.TryGetProperty(name, out var value))
+		{
 			return "";
+		}
 
 		return value.ValueKind switch
 		{
@@ -418,11 +547,14 @@ public sealed class QueryBuilderService
 	}
 
 	private static List<string> GetStringArray(
-		JsonElement element, string name)
+		JsonElement element,
+		string name)
 	{
 		if (!element.TryGetProperty(name, out var value) ||
 			value.ValueKind != JsonValueKind.Array)
+		{
 			return [];
+		}
 
 		return value.EnumerateArray()
 			.Where(x => x.ValueKind == JsonValueKind.String)
@@ -432,7 +564,9 @@ public sealed class QueryBuilderService
 	}
 
 	private static int GetInt(
-		JsonElement element, string name, int fallback)
+		JsonElement element,
+		string name,
+		int fallback)
 	{
 		return element.TryGetProperty(name, out var value) &&
 			   value.TryGetInt32(out var result)
