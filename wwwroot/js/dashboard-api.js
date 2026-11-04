@@ -125,3 +125,37 @@ export async function loadWidget(department, dashboardKey, widgetKey) {
         { method: 'POST' }
     );
 }
+
+
+export async function loadDemoUsers() {
+    return request('/api/dash/demo-users');
+}
+
+export async function selectDemoUser(userId) {
+    return request('/api/dash/demo-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: Number(userId) })
+    });
+}
+
+export async function loadSelectedDemoUser() {
+    return request('/api/dash/demo-user');
+}
+
+export async function loadUserLayout(department, dashboardKey) {
+    return request(
+        `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/layout?department=${encodeURIComponent(department)}`
+    );
+}
+
+export async function saveUserLayout(department, dashboardKey, widgets) {
+    return request(
+        `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/layout?department=${encodeURIComponent(department)}`,
+        {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(widgets)
+        }
+    );
+}
