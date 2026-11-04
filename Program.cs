@@ -26,6 +26,7 @@ builder.Services.AddScoped<DashboardQueryService>();
 builder.Services.AddScoped<UIConfigurationService>();
 
 
+builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
 	options.IdleTimeout = TimeSpan.FromHours(8);
