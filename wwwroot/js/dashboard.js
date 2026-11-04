@@ -10,7 +10,12 @@ import {
     loadDatasets as fetchDatasets,
     loadMetadata as fetchMetadata,
     executeQuery,
-    loadWidget
+    loadWidget,
+    loadDemoUsers,
+    selectDemoUser,
+    loadSelectedDemoUser,
+    loadUserLayout,
+    saveUserLayout
 } from './dashboard-api.js';
 
 import { createRenderer } from './dashboard-renderer.js';
@@ -21,6 +26,7 @@ import { createWidgetBuilder } from './widget-builder.js';
 
     const dashboardSelect = $('dashboardSelect');
     const departmentSelect = $('departmentSelect');
+    const demoUserSelect = $('demoUserSelect');
     const widgetsHost = $('dashboardWidgets');
     const loading = $('dashboardLoading');
     const errorBox = $('dashboardError');
@@ -30,6 +36,8 @@ import { createWidgetBuilder } from './widget-builder.js';
     let currentDashboard = null;
     let widgets = [];
     let editMode = false;
+    let activeUserId = null;
+    const CACHE_TTL_MS = 5 * 60 * 1000;
     let uiConfiguration = {
         dimensionLabel: 'Dimensions',
         measureLabel: 'Measures'
@@ -53,12 +61,53 @@ import { createWidgetBuilder } from './widget-builder.js';
         return dashboardSelect.value;
     }
 
+    function storageKey(kind) {
+        return `dashboard-${kind}:${activeUserId}:${getDashboardKey()}:${getDepartment()}`;
+    }
+
+    function setLayoutButtons(isDirty) {
+        $('saveLayoutButton').disabled = !isDirty;
+        $('discardLayoutButton').disabled = !isDirty;
+    }
+
+    function markDraft() {
+        if (!activeUserId) return;
+        try { sessionStorage.setItem(storageKey('draft'), JSON.stringify(widgets)); } catch { /* Optional draft cache. */ }
+        setLayoutButtons(true);
+    }
+
+    async function getCachedWidget(department, dashboardKey, widgetKey) {
+        const key = storageKey('data');
+        let cache = {};
+        try { cache = JSON.parse(sessionStorage.getItem(key) || '{}'); } catch { cache = {}; }
+        const cacheKey = `${department}:${dashboardKey}:${widgetKey}`;
+        const entry = cache[cacheKey];
+        if (entry && Date.now() - entry.timestamp < CACHE_TTL_MS) return entry.data;
+        const data = await loadWidget(department, dashboardKey, widgetKey);
+        cache[cacheKey] = { timestamp: Date.now(), data };
+        try { sessionStorage.setItem(key, JSON.stringify(cache)); } catch { /* Cache is optional. */ }
+        return data;
+    }
+
+    async function loadPersonalizedLayout() {
+        const draft = sessionStorage.getItem(storageKey('draft'));
+        if (draft) {
+            try { widgets = JSON.parse(draft); setLayoutButtons(true); return; }
+            catch { sessionStorage.removeItem(storageKey('draft')); }
+        }
+        const saved = await loadUserLayout(getDepartment(), getDashboardKey());
+        const json = saved?.layoutJson || saved?.LayoutJson;
+        if (json) widgets = JSON.parse(json);
+        setLayoutButtons(false);
+    }
+
     function getWidgets() {
         return widgets;
     }
 
     function setWidgets(value) {
         widgets = value;
+        markDraft();
     }
 
     const renderer = createRenderer({
@@ -67,7 +116,7 @@ import { createWidgetBuilder } from './widget-builder.js';
         getDepartment,
         getDashboardKey,
         getEditMode: () => editMode,
-        requestWidget: loadWidget,
+        requestWidget: getCachedWidget,
         openWidgetModal: widget => builder.openWidgetModal(widget),
         deleteWidget: index => builder.deleteWidget(index),
         getUIConfiguration: () => uiConfiguration,
@@ -111,6 +160,7 @@ import { createWidgetBuilder } from './widget-builder.js';
             widgets = [
                 ...(currentDashboard.widgets || currentDashboard.Widgets || [])
             ];
+            await loadPersonalizedLayout();
 
             $('dashboardTitle').textContent =
                 currentDashboard.displayName ||
@@ -145,6 +195,31 @@ import { createWidgetBuilder } from './widget-builder.js';
 
     function bindPageEvents() {
         builder.bindEvents();
+        $('saveLayoutButton').addEventListener('click', async () => {
+            try {
+                await saveUserLayout(getDepartment(), getDashboardKey(), widgets);
+                sessionStorage.removeItem(storageKey('draft'));
+                setLayoutButtons(false);
+                notice.textContent = 'Layout saved for this demo user.';
+                notice.classList.remove('d-none');
+            } catch (error) { showError(error.message); }
+        });
+        $('discardLayoutButton').addEventListener('click', async () => {
+            sessionStorage.removeItem(storageKey('draft'));
+            await loadDashboard();
+        });
+        $('refreshDataButton').addEventListener('click', async () => {
+            sessionStorage.removeItem(storageKey('data'));
+            await loadDashboard();
+        });
+        demoUserSelect.addEventListener('change', async () => {
+            try {
+                await selectDemoUser(Number(demoUserSelect.value));
+                activeUserId = Number(demoUserSelect.value);
+                await loadDashboard();
+            } catch (error) { showError(error.message); }
+        });
+
 
         $('editLayoutButton').addEventListener('click', () => {
             editMode = !editMode;
@@ -173,6 +248,17 @@ import { createWidgetBuilder } from './widget-builder.js';
 
     async function initialize() {
         try {
+            const demoUsers = await loadDemoUsers();
+            demoUserSelect.replaceChildren(...demoUsers.map(user => new Option(user.displayName || user.DisplayName, user.userId || user.UserId)));
+            try {
+                const selected = await loadSelectedDemoUser();
+                activeUserId = selected.userId || selected.UserId;
+            } catch {
+                if (!demoUsers.length) throw new Error('No active demo users are configured. Run the dashboard user/layout SQL script first.');
+                activeUserId = Number(demoUsers[0].userId || demoUsers[0].UserId);
+                await selectDemoUser(activeUserId);
+            }
+            demoUserSelect.value = String(activeUserId);
             uiConfiguration = await loadUIConfiguration();
             applyUILabels();
 
