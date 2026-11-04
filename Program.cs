@@ -23,6 +23,7 @@ builder.Services.AddScoped<DashboardConfigurationService>();
 builder.Services.AddScoped<QueryBuilderService>();
 builder.Services.AddScoped<DashboardWidgetQueryService>();
 builder.Services.AddScoped<DashboardQueryService>();
+builder.Services.AddScoped<UIConfigurationService>();
 
 
 builder.Services.AddSession(options =>

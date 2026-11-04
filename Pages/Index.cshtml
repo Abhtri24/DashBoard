@@ -79,12 +79,15 @@
                         </div>
 
                         <div class="col-md-4" id="dimensionField">
-                            <label for="dimensionSelect" class="form-label">Group by</label>
-                            <select id="dimensionSelect" class="form-select"></select>
+                            <label for="dimensionSelect" class="form-label" id="dimensionLabel">
+                                Dimensions
+                            </label>                            <select id="dimensionSelect" class="form-select"></select>
                         </div>
 
                         <div class="col-md-4">
-                            <label for="measureSelect" class="form-label">Measure</label>
+                            <label for="measureSelect" class="form-label" id="measureLabel">
+                                Measures
+                            </label>
                             <select id="measureSelect" class="form-select"></select>
                         </div>
                     </div>
@@ -192,5 +195,5 @@
 
 @section Scripts {
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script src="~/js/dashboard.js" asp-append-version="true"></script>
+    <script type="module" src="~/js/dashboard/dashboard.js" asp-append-version="true"></script>
 }

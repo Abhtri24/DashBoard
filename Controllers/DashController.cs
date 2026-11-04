@@ -36,6 +36,8 @@ public class DashController : ControllerBase
 	private readonly DashboardWidgetQueryService _widgetQueryService;
 	private readonly QueryBuilderService _queryBuilderService;
 
+	private readonly UIConfigurationService _uiConfigurationService;
+
 	public DashController(
 		SqlConnectionFactory db,
 		CatalogService catalog,
@@ -51,7 +53,8 @@ public class DashController : ControllerBase
 		AggregationQueryExecutionService executionService,
 		DashboardConfigurationService dashboardConfigurationService,
 		DashboardWidgetQueryService widgetQueryService,
-		QueryBuilderService queryBuilderService
+		QueryBuilderService queryBuilderService,
+		UIConfigurationService uiConfigurationService
 
 		)
 	{
@@ -70,6 +73,22 @@ public class DashController : ControllerBase
 		_dashboardConfigurationService = dashboardConfigurationService;
 		_widgetQueryService = widgetQueryService;
 		_queryBuilderService = queryBuilderService;
+		_uiConfigurationService = uiConfigurationService;
+	}
+
+
+	[HttpGet("ui-configuration")]
+	public async Task<IActionResult> GetUIConfiguration(
+	CancellationToken cancellationToken)
+	{
+		var configuration = await _uiConfigurationService.GetAsync(
+			cancellationToken);
+
+		return Ok(new
+		{
+			dimensionLabel = configuration.DimensionLabel,
+			measureLabel = configuration.MeasureLabel
+		});
 	}
 
 	private const string DepartmentSessionKey = "ActiveDepartment";
