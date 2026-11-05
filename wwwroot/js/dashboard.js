@@ -1,8 +1,8 @@
+
 // dashboard.js
 // Application entry point: shared page state, initialization and event wiring.
 
 import {
-    request,
     loadUIConfiguration,
     saveDepartment,
     loadDashboards,
@@ -55,7 +55,25 @@ import { createWidgetBuilder } from './widget-builder.js';
     function setDrilldownLoading(isLoading) {
         $('drilldownLoading').classList.toggle('d-none', !isLoading);
         $('drilldownTableContainer').classList.toggle('d-none', isLoading);
-        $('drilldownError').classList.add('d-none');
+
+        if (isLoading) {
+            $('drilldownEmpty').classList.add('d-none');
+            $('drilldownError').classList.add('d-none');
+        }
+    }
+
+    function getRowValue(row, key) {
+        if (!row || !key) return undefined;
+
+        if (Object.prototype.hasOwnProperty.call(row, key)) {
+            return row[key];
+        }
+
+        const matchingKey = Object.keys(row).find(
+            property => property.toLowerCase() === String(key).toLowerCase()
+        );
+
+        return matchingKey ? row[matchingKey] : undefined;
     }
 
     function renderDrilldownResult(result) {
@@ -72,8 +90,11 @@ import { createWidgetBuilder } from './widget-builder.js';
 
         columns.forEach(column => {
             const th = document.createElement('th');
-            th.textContent = column.label || column.Label ||
-                column.key || column.Key;
+
+            th.textContent =
+                column.label || column.Label ||
+                column.key || column.Key || '';
+
             headerRow.append(th);
         });
 
@@ -85,7 +106,11 @@ import { createWidgetBuilder } from './widget-builder.js';
             columns.forEach(column => {
                 const key = column.key || column.Key;
                 const td = document.createElement('td');
-                td.textContent = formatDrilldownValue(row[key]);
+
+                td.textContent = formatDrilldownValue(
+                    getRowValue(row, key)
+                );
+
                 tr.append(td);
             });
 
@@ -107,30 +132,23 @@ import { createWidgetBuilder } from './widget-builder.js';
         $('drilldownNext').disabled = !hasMore;
     }
 
-    async function openDrilldown(widget, dimension, value, page = 1) {
-        const filters = (widget.filters || widget.Filters || []).map(filter => ({
-            dimension: filter.columnKey || filter.ColumnKey ||
-                filter.dimension || filter.Dimension,
-            operator: filter.operator || filter.Operator || 'eq',
-            value: filter.filterValue ?? filter.FilterValue ??
-                filter.value ?? filter.Value
-        }));
+    function normalizeDrilldownFilters(widget) {
+        return (widget.filters || widget.Filters || [])
+            .map(filter => ({
+                dimension: filter.columnKey || filter.ColumnKey ||
+                    filter.dimension || filter.Dimension,
+                operator: filter.operator || filter.Operator || 'eq',
+                value: filter.filterValue ?? filter.FilterValue ??
+                    filter.value ?? filter.Value
+            }))
+            .filter(filter => Boolean(filter.dimension));
+    }
 
-        activeDrilldown = {
-            dataset: widget.datasetKey || widget.DatasetKey,
-            dimension,
-            value,
-            filters,
-            page
-        };
+    async function fetchDrilldownPage(page) {
+        if (!activeDrilldown) return;
 
-        $('drilldownModalTitle').textContent =
-            widget.title || widget.Title || 'Underlying records';
+        activeDrilldown.page = page;
 
-        $('drilldownDescription').textContent =
-            `${dimension}: ${value}`;
-
-        drilldownModal.show();
         setDrilldownLoading(true);
 
         try {
@@ -145,11 +163,33 @@ import { createWidgetBuilder } from './widget-builder.js';
         }
     }
 
+    async function openDrilldown(widget, dimension, value, page = 1) {
+        activeDrilldown = {
+            dataset: widget.datasetKey || widget.DatasetKey,
+            dimension,
+            value,
+            filters: normalizeDrilldownFilters(widget),
+            page
+        };
+
+        $('drilldownModalTitle').textContent =
+            widget.title || widget.Title || 'Underlying records';
+
+        $('drilldownDescription').textContent =
+            `${dimension}: ${value}`;
+
+        drilldownModal.show();
+
+        await fetchDrilldownPage(page);
+    }
+
     let currentDashboard = null;
     let widgets = [];
     let editMode = false;
     let activeUserId = null;
+
     const CACHE_TTL_MS = 5 * 60 * 1000;
+
     let uiConfiguration = {
         dimensionLabel: 'Dimensions',
         measureLabel: 'Measures'
@@ -184,32 +224,81 @@ import { createWidgetBuilder } from './widget-builder.js';
 
     function markDraft() {
         if (!activeUserId) return;
-        try { sessionStorage.setItem(storageKey('draft'), JSON.stringify(widgets)); } catch { /* Optional draft cache. */ }
+
+        try {
+            sessionStorage.setItem(
+                storageKey('draft'),
+                JSON.stringify(widgets)
+            );
+        } catch {
+            // Optional draft cache.
+        }
+
         setLayoutButtons(true);
     }
 
     async function getCachedWidget(department, dashboardKey, widgetKey) {
         const key = storageKey('data');
+
         let cache = {};
-        try { cache = JSON.parse(sessionStorage.getItem(key) || '{}'); } catch { cache = {}; }
+
+        try {
+            cache = JSON.parse(sessionStorage.getItem(key) || '{}');
+        } catch {
+            cache = {};
+        }
+
         const cacheKey = `${department}:${dashboardKey}:${widgetKey}`;
         const entry = cache[cacheKey];
-        if (entry && Date.now() - entry.timestamp < CACHE_TTL_MS) return entry.data;
-        const data = await loadWidget(department, dashboardKey, widgetKey);
-        cache[cacheKey] = { timestamp: Date.now(), data };
-        try { sessionStorage.setItem(key, JSON.stringify(cache)); } catch { /* Cache is optional. */ }
+
+        if (entry && Date.now() - entry.timestamp < CACHE_TTL_MS) {
+            return entry.data;
+        }
+
+        const data = await loadWidget(
+            department,
+            dashboardKey,
+            widgetKey
+        );
+
+        cache[cacheKey] = {
+            timestamp: Date.now(),
+            data
+        };
+
+        try {
+            sessionStorage.setItem(key, JSON.stringify(cache));
+        } catch {
+            // Cache is optional.
+        }
+
         return data;
     }
 
     async function loadPersonalizedLayout() {
         const draft = sessionStorage.getItem(storageKey('draft'));
+
         if (draft) {
-            try { widgets = JSON.parse(draft); setLayoutButtons(true); return; }
-            catch { sessionStorage.removeItem(storageKey('draft')); }
+            try {
+                widgets = JSON.parse(draft);
+                setLayoutButtons(true);
+                return;
+            } catch {
+                sessionStorage.removeItem(storageKey('draft'));
+            }
         }
-        const saved = await loadUserLayout(getDepartment(), getDashboardKey());
+
+        const saved = await loadUserLayout(
+            getDepartment(),
+            getDashboardKey()
+        );
+
         const json = saved?.layoutJson || saved?.LayoutJson;
-        if (json) widgets = JSON.parse(json);
+
+        if (json) {
+            widgets = JSON.parse(json);
+        }
+
         setLayoutButtons(false);
     }
 
@@ -259,9 +348,11 @@ import { createWidgetBuilder } from './widget-builder.js';
 
     async function loadDashboard() {
         clearError();
+
         loading.classList.remove('d-none');
         widgetsHost.classList.add('d-none');
         widgetsHost.replaceChildren();
+
         renderer.destroyCharts();
 
         try {
@@ -271,8 +362,10 @@ import { createWidgetBuilder } from './widget-builder.js';
             );
 
             widgets = [
-                ...(currentDashboard.widgets || currentDashboard.Widgets || [])
+                ...(currentDashboard.widgets ||
+                    currentDashboard.Widgets || [])
             ];
+
             await loadPersonalizedLayout();
 
             $('dashboardTitle').textContent =
@@ -297,6 +390,7 @@ import { createWidgetBuilder } from './widget-builder.js';
 
     async function refreshDashboardList() {
         const items = await loadDashboards(getDepartment());
+
         dashboardSelect.replaceChildren();
 
         items.forEach(item => {
@@ -308,66 +402,70 @@ import { createWidgetBuilder } from './widget-builder.js';
 
     function bindPageEvents() {
         builder.bindEvents();
+
         $('saveLayoutButton').addEventListener('click', async () => {
             try {
-                await saveUserLayout(getDepartment(), getDashboardKey(), widgets);
+                await saveUserLayout(
+                    getDepartment(),
+                    getDashboardKey(),
+                    widgets
+                );
+
                 sessionStorage.removeItem(storageKey('draft'));
                 setLayoutButtons(false);
+
                 notice.textContent = 'Layout saved for this demo user.';
                 notice.classList.remove('d-none');
-            } catch (error) { showError(error.message); }
+            } catch (error) {
+                showError(error.message);
+            }
         });
+
         $('discardLayoutButton').addEventListener('click', async () => {
             sessionStorage.removeItem(storageKey('draft'));
             await loadDashboard();
         });
+
         $('refreshDataButton').addEventListener('click', async () => {
             sessionStorage.removeItem(storageKey('data'));
             await loadDashboard();
         });
+
         demoUserSelect.addEventListener('change', async () => {
             try {
                 await selectDemoUser(Number(demoUserSelect.value));
-                activeUserId = Number(demoUserSelect.value);
-                await loadDashboard();
-            } catch (error) { showError(error.message); }
-        });
 
+                activeUserId = Number(demoUserSelect.value);
+
+                await loadDashboard();
+            } catch (error) {
+                showError(error.message);
+            }
+        });
 
         $('editLayoutButton').addEventListener('click', () => {
             editMode = !editMode;
+
             $('editLayoutButton').textContent =
                 editMode ? 'Done editing' : 'Edit layout';
 
-            widgetsHost.classList.toggle('dashboard-edit-mode', editMode);
+            widgetsHost.classList.toggle(
+                'dashboard-edit-mode',
+                editMode
+            );
+
             renderer.wireDragAndDrop();
         });
 
         $('drilldownPrevious').addEventListener('click', () => {
             if (activeDrilldown && activeDrilldown.page > 1) {
-                openDrilldown(
-                    {
-                        datasetKey: activeDrilldown.dataset,
-                        filters: activeDrilldown.filters
-                    },
-                    activeDrilldown.dimension,
-                    activeDrilldown.value,
-                    activeDrilldown.page - 1
-                );
+                fetchDrilldownPage(activeDrilldown.page - 1);
             }
         });
 
         $('drilldownNext').addEventListener('click', () => {
             if (activeDrilldown) {
-                openDrilldown(
-                    {
-                        datasetKey: activeDrilldown.dataset,
-                        filters: activeDrilldown.filters
-                    },
-                    activeDrilldown.dimension,
-                    activeDrilldown.value,
-                    activeDrilldown.page + 1
-                );
+                fetchDrilldownPage(activeDrilldown.page + 1);
             }
         });
 
@@ -390,16 +488,33 @@ import { createWidgetBuilder } from './widget-builder.js';
     async function initialize() {
         try {
             const demoUsers = await loadDemoUsers();
-            demoUserSelect.replaceChildren(...demoUsers.map(user => new Option(user.displayName || user.DisplayName, user.userId || user.UserId)));
+
+            demoUserSelect.replaceChildren(
+                ...demoUsers.map(user => new Option(
+                    user.displayName || user.DisplayName,
+                    user.userId || user.UserId
+                ))
+            );
+
             try {
                 const selected = await loadSelectedDemoUser();
                 activeUserId = selected.userId || selected.UserId;
             } catch {
-                if (!demoUsers.length) throw new Error('No active demo users are configured. Run the dashboard user/layout SQL script first.');
-                activeUserId = Number(demoUsers[0].userId || demoUsers[0].UserId);
+                if (!demoUsers.length) {
+                    throw new Error(
+                        'No active demo users are configured. Run the dashboard user/layout SQL script first.'
+                    );
+                }
+
+                activeUserId = Number(
+                    demoUsers[0].userId || demoUsers[0].UserId
+                );
+
                 await selectDemoUser(activeUserId);
             }
+
             demoUserSelect.value = String(activeUserId);
+
             uiConfiguration = await loadUIConfiguration();
             applyUILabels();
 
@@ -415,3 +530,4 @@ import { createWidgetBuilder } from './widget-builder.js';
     bindPageEvents();
     initialize();
 })();
+    

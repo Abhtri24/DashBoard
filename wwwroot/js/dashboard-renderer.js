@@ -136,6 +136,7 @@ export function createRenderer(ctx) {
         body.append(wrap);
     }
 
+
     function renderChart(body, widget, rows, type) {
         const measure = measureOf(widget);
         const dimension = dimensionOf(widget);
@@ -144,6 +145,7 @@ export function createRenderer(ctx) {
 
         if (!measureKey || !dimensionKey || !rows.length) {
             const labels = getUIConfiguration();
+
             body.append(el(
                 'p',
                 'text-secondary mb-0',
@@ -154,50 +156,185 @@ export function createRenderer(ctx) {
             return;
         }
 
+        const isPie = type === 'PIE';
+
+        // Chart wrapper
         const wrap = el('div', 'chart-container');
+
+        // Toolbar
+        const toolbar = el(
+            'div',
+            'chart-toolbar d-flex justify-content-end align-items-center gap-2 mb-2'
+        );
+
+        function createButton(label, title) {
+            const button = el(
+                'button',
+                'btn btn-sm btn-outline-secondary',
+                label
+            );
+
+            button.type = 'button';
+            button.title = title;
+            button.setAttribute('aria-label', title);
+
+            return button;
+        }
+
+        const zoomIn = createButton('+', 'Zoom in');
+        const zoomOut = createButton('−', 'Zoom out');
+        const resetZoom = createButton('Reset', 'Reset zoom');
+        const fullscreen = createButton('⛶', 'Full screen');
+
+        if (isPie) {
+            zoomIn.disabled = true;
+            zoomOut.disabled = true;
+            resetZoom.disabled = true;
+        }
+
+        toolbar.append(zoomIn, zoomOut, resetZoom, fullscreen);
+
+        // Canvas area
+        const chartArea = el('div', 'chart-canvas-container');
         const canvas = document.createElement('canvas');
-        wrap.append(canvas);
+
+        chartArea.append(canvas);
+        wrap.append(toolbar, chartArea);
         body.append(wrap);
 
         const chart = new Chart(canvas, {
             type: type.toLowerCase(),
+
             data: {
-                labels: rows.map(row => String(findValue(row, dimensionKey) ?? '')),
+                labels: rows.map(row =>
+                    String(findValue(row, dimensionKey) ?? '')
+                ),
+
                 datasets: [{
                     label: labelOf(measure),
-                    data: rows.map(row => Number(findValue(row, measureKey) ?? 0)),
+                    data: rows.map(row =>
+                        Number(findValue(row, measureKey) ?? 0)
+                    ),
                     borderWidth: 1
                 }]
             },
+
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+
                 plugins: {
-                    legend: { display: type === 'PIE' }
+                    legend: {
+                        display: isPie
+                    },
+
+                    zoom: {
+                        zoom: {
+                            wheel: {
+                                enabled: !isPie,
+                                modifierKey: 'ctrl'
+                            },
+                            pinch: {
+                                enabled: !isPie
+                            },
+                            drag: {
+                                enabled: false
+                            },
+                            mode: 'xy'
+                        },
+
+                        pan: {
+                            enabled: !isPie,
+                            mode: 'xy',
+                            modifierKey: 'shift'
+                        }
+                    }
                 },
-                scales: type === 'PIE' ? {} : { y: { beginAtZero: true } },
+
+                scales: isPie
+                    ? {}
+                    : {
+                        x: {
+                            ticks: {
+                                autoSkip: true,
+                                maxRotation: 45,
+                                minRotation: 0
+                            }
+                        },
+                        y: {
+                            beginAtZero: true
+                        }
+                    },
+
                 onClick: (event, elements, chart) => {
                     if (getEditMode() || !elements.length) return;
 
                     const index = elements[0].index;
                     const selectedValue = chart.data.labels[index];
-                    const dimensionKey = keyOf(dimensionOf(widget));
+                    const clickedDimension = keyOf(dimensionOf(widget));
 
-                    if (!dimensionKey || selectedValue == null) return;
+                    if (!clickedDimension || selectedValue == null) return;
 
-                    onDrilldown(widget, dimensionKey, String(selectedValue));
+                    onDrilldown(
+                        widget,
+                        clickedDimension,
+                        String(selectedValue)
+                    );
                 },
+
                 onHover: (event, elements) => {
                     if (event.native?.target) {
                         event.native.target.style.cursor =
-                            elements.length && !getEditMode() ? 'pointer' : 'default';
+                            elements.length && !getEditMode()
+                                ? 'pointer'
+                                : 'default';
                     }
                 }
             }
         });
 
+        // Zoom controls
+        zoomIn.addEventListener('click', () => {
+            if (!isPie) chart.zoom(1.2);
+        });
+
+        zoomOut.addEventListener('click', () => {
+            if (!isPie) chart.zoom(0.8);
+        });
+
+        resetZoom.addEventListener('click', () => {
+            if (!isPie) chart.resetZoom();
+        });
+
+        // Full-screen control
+        fullscreen.addEventListener('click', async () => {
+            try {
+                if (document.fullscreenElement === wrap) {
+                    await document.exitFullscreen();
+                } else {
+                    await wrap.requestFullscreen();
+                }
+            } catch (error) {
+                console.error('Unable to enter full-screen mode:', error);
+            }
+        });
+
+        // Keep the button label in sync, including when Esc is pressed.
+        wrap.addEventListener('fullscreenchange', () => {
+            const isFullscreen = document.fullscreenElement === wrap;
+
+            fullscreen.textContent = isFullscreen ? '⛶ Exit' : '⛶';
+            fullscreen.title = isFullscreen
+                ? 'Exit full screen'
+                : 'Full screen';
+
+            requestAnimationFrame(() => chart.resize());
+        });
+
         chartInstances.push(chart);
     }
+
+
 
     function renderRows(body, widget, result) {
         const rows = Array.isArray(result)

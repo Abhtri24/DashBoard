@@ -197,13 +197,21 @@
             box-shadow: 0 .125rem .5rem rgba(0,0,0,.07);
         }
 
+.chart-toolbar{
+		flex-shrink: 0;
+
+}
+
         .dashboard-widget .card-body {
             min-width: 0;
         }
 
         .dashboard-widget .chart-container {
             position: relative;
-            height: 280px;
+            height: 320px;
+            min-width:0;
+            display: flex;
+            flex-direction: column; 
         }
 
         .dashboard-widget canvas {
@@ -224,6 +232,32 @@
     .widget-actions {
         opacity: .65;
     }
+
+    .chart-canvas-container {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        width: 100%;
+    }
+
+        .chart-canvas-container canvas {
+            max-width: 100%;
+        }
+
+    /* Full-screen chart */
+    .chart-container:fullscreen {
+        width: 100vw;
+        height: 100vh;
+        padding: 1.25rem;
+        background: white;
+        display: flex;
+        flex-direction: column;
+    }
+
+        .chart-container:fullscreen .chart-canvas-container {
+            flex: 1;
+            min-height: 0;
+        }
 
     .dashboard-widget:hover .widget-actions,
     .dashboard-edit-mode .widget-actions {
@@ -253,5 +287,12 @@
 
 @section Scripts {
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
+
+    <script>
+        Chart.register(ChartZoom);
+    </script>
+
     <script type="module" src="~/js/dashboard.js" asp-append-version="true"></script>
 }
