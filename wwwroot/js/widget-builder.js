@@ -307,7 +307,7 @@ export function createWidgetBuilder(ctx) {
         modal.hide();
 
         notice.textContent =
-            'This card is currently a local preview. It will not survive a refresh until the SQL persistence endpoints are implemented in Phase 3.';
+            'Unsaved changes are stored temporarily in this browser tab. Click Save Layout to keep them for future sessions.';
         notice.classList.remove('d-none');
 
         renderLocalDashboard();

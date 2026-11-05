@@ -175,7 +175,7 @@ import { createWidgetBuilder } from './widget-builder.js';
             loading.classList.add('d-none');
             widgetsHost.classList.remove('d-none');
 
-            await renderer.renderDashboard();
+            await builder.renderLocalDashboard();
         } catch (error) {
             loading.classList.add('d-none');
             showError(error.message);

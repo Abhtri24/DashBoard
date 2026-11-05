@@ -101,7 +101,7 @@ public class DashController : ControllerBase
 		await using var connection = await _db.OpenAsync();
 		const string sql = """
 			SELECT UserId, DisplayName
-			FROM dash.DemoUser
+			FROM org.DemoUser
 			WHERE IsActive = 1
 			ORDER BY DisplayName;
 			""";
@@ -121,7 +121,7 @@ public class DashController : ControllerBase
 		await using var connection = await _db.OpenAsync();
 		var exists = await connection.ExecuteScalarAsync<bool>(
 			new CommandDefinition(
-				"SELECT CASE WHEN EXISTS (SELECT 1 FROM dash.DemoUser WHERE UserId = @UserId AND IsActive = 1) THEN 1 ELSE 0 END;",
+				"SELECT CASE WHEN EXISTS (SELECT 1 FROM org.DemoUser WHERE UserId = @UserId AND IsActive = 1) THEN 1 ELSE 0 END;",
 				new { request.UserId },
 				cancellationToken: cancellationToken));
 
