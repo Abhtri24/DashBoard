@@ -15,7 +15,8 @@ import {
     selectDemoUser,
     loadSelectedDemoUser,
     loadUserLayout,
-    saveUserLayout
+    saveUserLayout,
+    loadDrilldown
 } from './dashboard-api.js';
 
 import { createRenderer } from './dashboard-renderer.js';
@@ -32,6 +33,117 @@ import { createWidgetBuilder } from './widget-builder.js';
     const errorBox = $('dashboardError');
     const notice = $('dashboardNotice');
     const modal = bootstrap.Modal.getOrCreateInstance($('widgetModal'));
+
+    const drilldownModal = bootstrap.Modal.getOrCreateInstance(
+        $('drilldownModal')
+    );
+
+    let activeDrilldown = null;
+
+    function formatDrilldownValue(value) {
+        if (value == null) return '—';
+
+        if (typeof value === 'number') {
+            return new Intl.NumberFormat('en-IN', {
+                maximumFractionDigits: 2
+            }).format(value);
+        }
+
+        return String(value);
+    }
+
+    function setDrilldownLoading(isLoading) {
+        $('drilldownLoading').classList.toggle('d-none', !isLoading);
+        $('drilldownTableContainer').classList.toggle('d-none', isLoading);
+        $('drilldownError').classList.add('d-none');
+    }
+
+    function renderDrilldownResult(result) {
+        const columns = result.columns || result.Columns || [];
+        const rows = result.rows || result.Rows || [];
+
+        const head = $('drilldownTableHead');
+        const body = $('drilldownTableBody');
+
+        head.replaceChildren();
+        body.replaceChildren();
+
+        const headerRow = document.createElement('tr');
+
+        columns.forEach(column => {
+            const th = document.createElement('th');
+            th.textContent = column.label || column.Label ||
+                column.key || column.Key;
+            headerRow.append(th);
+        });
+
+        head.append(headerRow);
+
+        rows.forEach(row => {
+            const tr = document.createElement('tr');
+
+            columns.forEach(column => {
+                const key = column.key || column.Key;
+                const td = document.createElement('td');
+                td.textContent = formatDrilldownValue(row[key]);
+                tr.append(td);
+            });
+
+            body.append(tr);
+        });
+
+        const hasRows = rows.length > 0;
+
+        $('drilldownEmpty').classList.toggle('d-none', hasRows);
+        $('drilldownTableContainer').classList.toggle('d-none', !hasRows);
+
+        const page = result.page || result.Page || activeDrilldown.page;
+        const hasMore = result.hasMore ?? result.HasMore ?? false;
+
+        $('drilldownPageInfo').textContent =
+            `Page ${page} · ${rows.length} records`;
+
+        $('drilldownPrevious').disabled = page <= 1;
+        $('drilldownNext').disabled = !hasMore;
+    }
+
+    async function openDrilldown(widget, dimension, value, page = 1) {
+        const filters = (widget.filters || widget.Filters || []).map(filter => ({
+            dimension: filter.columnKey || filter.ColumnKey ||
+                filter.dimension || filter.Dimension,
+            operator: filter.operator || filter.Operator || 'eq',
+            value: filter.filterValue ?? filter.FilterValue ??
+                filter.value ?? filter.Value
+        }));
+
+        activeDrilldown = {
+            dataset: widget.datasetKey || widget.DatasetKey,
+            dimension,
+            value,
+            filters,
+            page
+        };
+
+        $('drilldownModalTitle').textContent =
+            widget.title || widget.Title || 'Underlying records';
+
+        $('drilldownDescription').textContent =
+            `${dimension}: ${value}`;
+
+        drilldownModal.show();
+        setDrilldownLoading(true);
+
+        try {
+            const result = await loadDrilldown(activeDrilldown);
+            renderDrilldownResult(result);
+        } catch (error) {
+            $('drilldownTableContainer').classList.add('d-none');
+            $('drilldownEmpty').classList.add('d-none');
+            showError(error.message, $('drilldownError'));
+        } finally {
+            $('drilldownLoading').classList.add('d-none');
+        }
+    }
 
     let currentDashboard = null;
     let widgets = [];
@@ -120,7 +232,8 @@ import { createWidgetBuilder } from './widget-builder.js';
         openWidgetModal: widget => builder.openWidgetModal(widget),
         deleteWidget: index => builder.deleteWidget(index),
         getUIConfiguration: () => uiConfiguration,
-        renderAfterReorder: () => builder.renderLocalDashboard()
+        renderAfterReorder: () => builder.renderLocalDashboard(),
+        onDrilldown: openDrilldown
     });
 
     const builder = createWidgetBuilder({
@@ -228,6 +341,34 @@ import { createWidgetBuilder } from './widget-builder.js';
 
             widgetsHost.classList.toggle('dashboard-edit-mode', editMode);
             renderer.wireDragAndDrop();
+        });
+
+        $('drilldownPrevious').addEventListener('click', () => {
+            if (activeDrilldown && activeDrilldown.page > 1) {
+                openDrilldown(
+                    {
+                        datasetKey: activeDrilldown.dataset,
+                        filters: activeDrilldown.filters
+                    },
+                    activeDrilldown.dimension,
+                    activeDrilldown.value,
+                    activeDrilldown.page - 1
+                );
+            }
+        });
+
+        $('drilldownNext').addEventListener('click', () => {
+            if (activeDrilldown) {
+                openDrilldown(
+                    {
+                        datasetKey: activeDrilldown.dataset,
+                        filters: activeDrilldown.filters
+                    },
+                    activeDrilldown.dimension,
+                    activeDrilldown.value,
+                    activeDrilldown.page + 1
+                );
+            }
         });
 
         dashboardSelect.addEventListener('change', loadDashboard);

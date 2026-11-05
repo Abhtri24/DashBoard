@@ -113,12 +113,16 @@ public sealed class DashboardDrilldownService
 
 		// orderLineId is the unique row-level tie-breaker
 		// in the current sales dataset.
-		var stableSortDimension = dataset.Dimension("orderLineId");
+		var stableSortDimension = dataset.Dimensions.FirstOrDefault(
+	d => d.Key.Equals(
+		"orderLineId",
+		StringComparison.OrdinalIgnoreCase));
 
-		var orderBy = selectedDimension.Key.Equals(
-			stableSortDimension.Key,
-			StringComparison.OrdinalIgnoreCase)
-			? selectedDimension.Column
+		var orderBy = stableSortDimension is null ||
+					  selectedDimension.Key.Equals(
+						  stableSortDimension.Key,
+						  StringComparison.OrdinalIgnoreCase)
+			? $"{selectedDimension.Column} ASC"
 			: $"{selectedDimension.Column} ASC, {stableSortDimension.Column} ASC";
 
 		var sql = $"""

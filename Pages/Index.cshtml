@@ -126,6 +126,58 @@
     </div>
 </div>
 
+<div class="modal fade" id="drilldownModal" tabindex="-1"
+     aria-labelledby="drilldownModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title" id="drilldownModalTitle">
+                        Underlying records
+                    </h5>
+                    <div class="small text-secondary" id="drilldownDescription"></div>
+                </div>
+                <button type="button" class="btn-close"
+                        data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <div class="modal-body">
+                <div id="drilldownLoading" class="text-secondary d-none">
+                    Loading records...
+                </div>
+
+                <div id="drilldownError" class="alert alert-danger d-none"></div>
+
+                <div id="drilldownTableContainer" class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead id="drilldownTableHead"></thead>
+                        <tbody id="drilldownTableBody"></tbody>
+                    </table>
+                </div>
+
+                <div id="drilldownEmpty" class="text-secondary d-none">
+                    No underlying records found.
+                </div>
+            </div>
+
+            <div class="modal-footer justify-content-between">
+                <span class="small text-secondary" id="drilldownPageInfo"></span>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary"
+                            id="drilldownPrevious" disabled>
+                        Previous
+                    </button>
+                    <button type="button" class="btn btn-outline-primary"
+                            id="drilldownNext" disabled>
+                        Next
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
 <style>
     .dashboard-grid {
         display: grid;

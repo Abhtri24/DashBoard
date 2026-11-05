@@ -5,7 +5,7 @@ export function createRenderer(ctx) {
     const {
         widgetsHost, getWidgets, getDepartment, getDashboardKey,
         getEditMode, requestWidget, openWidgetModal, deleteWidget,
-        getUIConfiguration, renderAfterReorder
+        getUIConfiguration, renderAfterReorder, onDrilldown
     } = ctx;
 
     let chartInstances = [];
@@ -172,8 +172,27 @@ export function createRenderer(ctx) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { display: type === 'PIE' } },
-                scales: type === 'PIE' ? {} : { y: { beginAtZero: true } }
+                plugins: {
+                    legend: { display: type === 'PIE' }
+                },
+                scales: type === 'PIE' ? {} : { y: { beginAtZero: true } },
+                onClick: (event, elements, chart) => {
+                    if (getEditMode() || !elements.length) return;
+
+                    const index = elements[0].index;
+                    const selectedValue = chart.data.labels[index];
+                    const dimensionKey = keyOf(dimensionOf(widget));
+
+                    if (!dimensionKey || selectedValue == null) return;
+
+                    onDrilldown(widget, dimensionKey, String(selectedValue));
+                },
+                onHover: (event, elements) => {
+                    if (event.native?.target) {
+                        event.native.target.style.cursor =
+                            elements.length && !getEditMode() ? 'pointer' : 'default';
+                    }
+                }
             }
         });
 
@@ -287,3 +306,4 @@ export function createRenderer(ctx) {
         wireDragAndDrop
     };
 }
+

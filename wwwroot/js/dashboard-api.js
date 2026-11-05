@@ -159,3 +159,11 @@ export async function saveUserLayout(department, dashboardKey, widgets) {
         }
     );
 }
+
+export async function loadDrilldown(payload) {
+    return request('/api/dash/drilldown', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+}

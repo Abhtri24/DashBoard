@@ -13,11 +13,12 @@ public record DatasetDef(
     List<DimensionDef> Dimensions,
     List<MeasureDef> Measures)
 {
-    public DimensionDef Dimension(string key) =>
-        Dimensions.FirstOrDefault(d => d.Key == key)
-        ?? throw new ArgumentException($"Unknown dimension '{key}'");
+	public DimensionDef Dimension(string key) =>
+	 Dimensions.FirstOrDefault(d =>
+		 string.Equals(d.Key, key, StringComparison.OrdinalIgnoreCase))
+	 ?? throw new ArgumentException($"Unknown dimension '{key}'");
 
-    public MeasureDef Measure(string key) =>
+	public MeasureDef Measure(string key) =>
         Measures.FirstOrDefault(m => m.Key == key)
         ?? throw new ArgumentException($"Unknown measure '{key}'");
 }
@@ -60,22 +61,31 @@ public class CatalogService
             """,
             new { name })).ToList();
 
-        var dimensions = columns
-            .Where(c => c.Role == "dimension")
-            .Select(c => new DimensionDef(c.ColumnKey, Quote(c.ColumnName), c.Label, c.DataType))
-            .ToList();
+		var dimensions = columns
+	 .Where(c => string.Equals(
+		 c.Role,
+		 "DIMENSION",
+		 StringComparison.OrdinalIgnoreCase))
+	 .Select(c => new DimensionDef(
+		 c.ColumnKey,
+		 Quote(c.ColumnName),
+		 c.Label,
+		 c.DataType))
+	 .ToList();
+		var measures = columns
+	.Where(c => string.Equals(
+		c.Role,
+		"MEASURE",
+		StringComparison.OrdinalIgnoreCase))
+	.Select(c => new MeasureDef(
+		c.ColumnKey,
+		c.Label,
+		BuildAggregate(c.Agg!, c.ColumnName),
+		c.Format ?? "number",
+		Quote(c.ColumnName)))
+	.ToList();
 
-        var measures = columns
-            .Where(c => c.Role == "measure")
-            .Select(c => new MeasureDef(
-                c.ColumnKey,
-                c.Label,
-                BuildAggregate(c.Agg!, c.ColumnName),
-                c.Format ?? "number",
-                Quote(c.ColumnName)))
-            .ToList();
-
-        return new DatasetDef(name, dataset.SourceObject, dimensions, measures);
+		return new DatasetDef(name, dataset.SourceObject, dimensions, measures);
     }
 
     private static string Quote(string name) => "[" + name.Replace("]", "]]") + "]";
