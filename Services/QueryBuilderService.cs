@@ -279,13 +279,11 @@ public sealed class QueryBuilderService
 
 			if (!columnsByKey.TryGetValue(key, out var column) ||
 				!IsPhysicalColumn(column) ||
-				!string.Equals(
-					column.Role,
-					"dimension",
-					StringComparison.OrdinalIgnoreCase))
+				(!string.Equals(column.Role, "dimension", StringComparison.OrdinalIgnoreCase) &&
+				 !string.Equals(column.Role, "measure", StringComparison.OrdinalIgnoreCase)))
 			{
 				throw new ArgumentException(
-					$"Invalid filter dimension '{key}'.");
+					$"Invalid filter field '{key}'.");
 			}
 
 			if (string.IsNullOrWhiteSpace(GetString(filter, "operator")))
@@ -408,7 +406,10 @@ public sealed class QueryBuilderService
 				SourceAlias = aliasById[table.DatasetTableId],
 				Column = column.SourceColumn ?? column.ColumnName,
 				Operator = GetString(filter, "operator"),
-				Value = GetString(filter, "value")
+				Value = ConvertFilterValue(
+					GetString(filter, "value"),
+					column.DataType,
+					GetString(filter, "operator"))
 			});
 		}
 
@@ -501,6 +502,59 @@ public sealed class QueryBuilderService
 
 		if (hasAccess == 0)
 			throw new UnauthorizedAccessException("Dataset not accessible.");
+	}
+
+	private static object? ConvertFilterValue(
+		string? value,
+		string dataType,
+		string operation)
+	{
+		if (operation.Equals("isNull", StringComparison.OrdinalIgnoreCase) ||
+			operation.Equals("isNotNull", StringComparison.OrdinalIgnoreCase))
+			return null;
+
+		if (string.IsNullOrWhiteSpace(value))
+			throw new ArgumentException("A filter value is required.");
+
+		var type = dataType.Trim().ToLowerInvariant();
+
+		try
+		{
+			if (operation.Equals("in", StringComparison.OrdinalIgnoreCase))
+			{
+				var values = value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+				if (values.Length == 0)
+					throw new ArgumentException("An IN filter needs at least one value.");
+
+				return values.Select(item => ConvertSingleFilterValue(item, type)).ToArray();
+			}
+
+			return ConvertSingleFilterValue(value, type);
+		}
+		catch (FormatException)
+		{
+			throw new ArgumentException($"'{value}' is not a valid {dataType} filter value.");
+		}
+		catch (OverflowException)
+		{
+			throw new ArgumentException($"'{value}' is outside the supported range for {dataType}.");
+		}
+	}
+
+	private static object ConvertSingleFilterValue(string value, string type)
+	{
+		if (type.Contains("bigint")) return long.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+		if (type.Contains("smallint")) return short.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+		if (type.Contains("tinyint")) return byte.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+		if (type.Contains("int")) return int.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+		if (type.Contains("decimal") || type.Contains("numeric") || type.Contains("money"))
+			return decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+		if (type.Contains("float")) return double.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+		if (type.Contains("real")) return float.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+		if (type.Contains("bit")) return bool.Parse(value);
+		if (type.Contains("date") || type.Contains("time"))
+			return DateTime.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+		return value;
 	}
 
 	private static bool IsPhysicalColumn(ColumnRow column)
