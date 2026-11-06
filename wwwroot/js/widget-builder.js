@@ -65,26 +65,99 @@ export function createWidgetBuilder(ctx) {
         await loadMetadata();
     }
 
+    function getColumnType(columnKey) {
+        const column = dimensions.find(item =>
+            String(keyOf(item)).toLowerCase() === String(columnKey).toLowerCase()
+        );
+        return String(getProp(column, 'type', 'Type') || 'string').toLowerCase();
+    }
+
+    function getFilterType(dataType) {
+        const type = String(dataType || '').toLowerCase();
+
+        if (/date|time/.test(type)) return 'date';
+        if (/int|decimal|numeric|number|float|real|money/.test(type)) return 'number';
+        return 'text';
+    }
+
+    function getFilterOperators(dataType) {
+        const inputType = getFilterType(dataType);
+        const common = [
+            ['eq', 'Equals'],
+            ['neq', 'Does not equal'],
+            ['in', 'Is one of']
+        ];
+
+        if (inputType === 'text') {
+            return [
+                ...common,
+                ['contains', 'Contains'],
+                ['startsWith', 'Starts with'],
+                ['endsWith', 'Ends with'],
+                ['isNull', 'Is empty'],
+                ['isNotNull', 'Is not empty']
+            ];
+        }
+
+        return [
+            ...common,
+            ['gt', 'Greater than'],
+            ['gte', 'At least'],
+            ['lt', 'Less than'],
+            ['lte', 'At most'],
+            ['isNull', 'Is empty'],
+            ['isNotNull', 'Is not empty']
+        ];
+    }
+
+    function updateFilterControls(row, preferredOperator = null) {
+        const field = row.querySelector('.filter-field');
+        const operator = row.querySelector('.filter-operator');
+        const value = row.querySelector('.filter-value');
+        const inputType = getFilterType(getColumnType(field.value));
+        const previousValue = value.value;
+        const previousOperator = preferredOperator || operator.value;
+
+        operator.replaceChildren(
+            ...getFilterOperators(getColumnType(field.value)).map(
+                ([key, label]) => new Option(label, key)
+            )
+        );
+
+        const validOperator = Array.from(operator.options)
+            .some(option => option.value === previousOperator);
+        operator.value = validOperator ? previousOperator : 'eq';
+
+        value.type = inputType === 'date' ? 'date' :
+            inputType === 'number' ? 'number' : 'text';
+        value.step = inputType === 'number' ? 'any' : '';
+        value.placeholder = inputType === 'number' ? 'Enter a number' :
+            inputType === 'date' ? 'Select a date' : 'Enter a value';
+
+        const noValueRequired = ['isNull', 'isNotNull'].includes(operator.value);
+        value.disabled = noValueRequired;
+        value.required = !noValueRequired;
+        value.classList.toggle('d-none', noValueRequired);
+        if (!noValueRequired) value.value = previousValue;
+    }
+
     function addFilterRow(existing = null) {
         const row = document.createElement('div');
         row.className = 'row g-2 align-items-center widget-filter-row';
 
         const field = document.createElement('select');
-        field.className = 'form-select';
+        field.className = 'form-select filter-field';
+
         const operator = document.createElement('select');
-        operator.className = 'form-select';
+        operator.className = 'form-select filter-operator';
+
         const value = document.createElement('input');
-        value.className = 'form-control';
+        value.className = 'form-control filter-value';
         value.placeholder = 'Value';
 
         dimensions.forEach(item => {
             field.add(new Option(item.label || item.Label, item.key || item.Key));
         });
-
-        [
-            ['eq', 'Equals'], ['neq', 'Does not equal'], ['gt', 'Greater than'],
-            ['gte', 'At least'], ['lt', 'Less than'], ['lte', 'At most']
-        ].forEach(item => operator.add(new Option(item[1], item[0])));
 
         const remove = document.createElement('button');
         remove.type = 'button';
@@ -100,12 +173,22 @@ export function createWidgetBuilder(ctx) {
             row.append(column);
         });
 
+        field.addEventListener('change', () => updateFilterControls(row));
+        operator.addEventListener('change', () => updateFilterControls(row));
+
         if (existing) {
             field.value = existing.dimension || existing.Dimension ||
                 existing.columnKey || '';
-            operator.value = existing.operator || existing.Operator || 'eq';
-            value.value = existing.value || existing.Value ||
-                existing.filterValue || '';
+        }
+
+        updateFilterControls(
+            row,
+            existing?.operator || existing?.Operator || 'eq'
+        );
+
+        if (existing) {
+            value.value = existing.value ?? existing.Value ??
+                existing.filterValue ?? '';
         }
 
         $('widgetFilters').append(row);
@@ -115,16 +198,19 @@ export function createWidgetBuilder(ctx) {
         const filters = [];
 
         document.querySelectorAll('.widget-filter-row').forEach(row => {
-            const value = row.querySelector('input').value.trim();
-            if (!value) {
+            const field = row.querySelector('.filter-field');
+            const operator = row.querySelector('.filter-operator');
+            const value = row.querySelector('.filter-value');
+            const noValueRequired = ['isNull', 'isNotNull'].includes(operator.value);
+
+            if (!noValueRequired && !value.value.trim()) {
                 throw new Error('Enter a value for each filter or remove the empty filter.');
             }
 
-            const selects = row.querySelectorAll('select');
             filters.push({
-                dimension: selects[0].value,
-                operator: selects[1].value,
-                value
+                dimension: field.value,
+                operator: operator.value,
+                value: noValueRequired ? '' : value.value.trim()
             });
         });
 
