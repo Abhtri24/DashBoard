@@ -141,23 +141,21 @@ export function createWidgetBuilder(ctx) {
         if (!noValueRequired) value.value = previousValue;
     }
 
-    function addFilterRow(existing = null) {
+    function addFilterRow(existing = null, aggregate = false) {
         const row = document.createElement('div');
         row.className = 'row g-2 align-items-center widget-filter-row';
+        row.dataset.aggregate = aggregate ? 'true' : 'false';
 
         const field = document.createElement('select');
         field.className = 'form-select filter-field';
-
         const operator = document.createElement('select');
         operator.className = 'form-select filter-operator';
-
         const value = document.createElement('input');
         value.className = 'form-control filter-value';
         value.placeholder = 'Value';
 
-        [...dimensions, ...measures].forEach(item => {
-            field.add(new Option(item.label || item.Label, item.key || item.Key));
-        });
+        const options = aggregate ? measures : dimensions;
+        options.forEach(item => field.add(new Option(item.label || item.Label, item.key || item.Key)));
 
         const remove = document.createElement('button');
         remove.type = 'button';
@@ -175,45 +173,30 @@ export function createWidgetBuilder(ctx) {
 
         field.addEventListener('change', () => updateFilterControls(row));
         operator.addEventListener('change', () => updateFilterControls(row));
+        if (existing) field.value = aggregate
+            ? (existing.measure || existing.Measure || existing.columnKey || existing.ColumnKey || '')
+            : (existing.dimension || existing.Dimension || existing.columnKey || existing.ColumnKey || '');
 
-        if (existing) {
-            field.value = existing.dimension || existing.Dimension ||
-                existing.columnKey || '';
-        }
-
-        updateFilterControls(
-            row,
-            existing?.operator || existing?.Operator || 'eq'
-        );
-
-        if (existing) {
-            value.value = existing.value ?? existing.Value ??
-                existing.filterValue ?? '';
-        }
-
-        $('widgetFilters').append(row);
+        updateFilterControls(row, existing?.operator || existing?.Operator || 'eq');
+        if (existing) value.value = existing.value ?? existing.Value ?? existing.filterValue ?? existing.FilterValue ?? '';
+        (aggregate ? $('widgetHavingFilters') : $('widgetFilters')).append(row);
     }
 
-    function collectFilters() {
+    function collectFilters(containerId) {
         const filters = [];
-
-        document.querySelectorAll('.widget-filter-row').forEach(row => {
+        document.querySelectorAll('#' + containerId + ' .widget-filter-row').forEach(row => {
             const field = row.querySelector('.filter-field');
             const operator = row.querySelector('.filter-operator');
             const value = row.querySelector('.filter-value');
             const noValueRequired = ['isNull', 'isNotNull'].includes(operator.value);
-
-            if (!noValueRequired && !value.value.trim()) {
+            if (!noValueRequired && !value.value.trim())
                 throw new Error('Enter a value for each filter or remove the empty filter.');
-            }
-
             filters.push({
-                dimension: field.value,
+                [row.dataset.aggregate === 'true' ? 'measure' : 'dimension']: field.value,
                 operator: operator.value,
                 value: noValueRequired ? '' : value.value.trim()
             });
         });
-
         return filters;
     }
 
@@ -237,7 +220,8 @@ export function createWidgetBuilder(ctx) {
             dataset: $('datasetSelect').value,
             dimensions: dimension ? [dimension] : [],
             measures: [measure],
-            filters: collectFilters(),
+            filters: collectFilters('widgetFilters'),
+            havingFilters: collectFilters('widgetHavingFilters'),
             sort: [{ field: measure, direction: 'desc' }],
             page: 1,
             pageSize: 100
@@ -248,6 +232,7 @@ export function createWidgetBuilder(ctx) {
         clearError($('widgetModalError'));
         $('widgetForm').reset();
         $('widgetFilters').replaceChildren();
+        $('widgetHavingFilters').replaceChildren();
 
         $('editingWidgetKey').value = widget
             ? getProp(widget, 'widgetKey', 'WidgetKey')
@@ -283,7 +268,11 @@ export function createWidgetBuilder(ctx) {
             if (dimension) $('dimensionSelect').value = keyOf(dimension);
 
             (getProp(widget, 'filters', 'Filters') || [])
+                .filter(filter => !(filter.scope === 'having' || filter.Scope === 'having'))
                 .forEach(filter => addFilterRow(filter));
+            (getProp(widget, 'filters', 'Filters') || [])
+                .filter(filter => filter.scope === 'having' || filter.Scope === 'having')
+                .forEach(filter => addFilterRow(filter, true));
 
             updateDimensionVisibility();
         } catch (error) {
@@ -298,7 +287,10 @@ export function createWidgetBuilder(ctx) {
 
         const measure = measures.find(x => (x.key || x.Key) === measureKey);
         const dimension = dimensions.find(x => (x.key || x.Key) === dimensionKey);
-        const filters = collectFilters();
+        const filters = [
+            ...collectFilters('widgetFilters').map(filter => ({ ...filter, scope: 'where' })),
+            ...collectFilters('widgetHavingFilters').map(filter => ({ ...filter, scope: 'having' }))
+        ];
         const widgets = getWidgets();
 
         return {
@@ -320,7 +312,8 @@ export function createWidgetBuilder(ctx) {
                 labelOverride: dimension?.label || dimension?.Label
             }] : [],
             filters: filters.map((filter, index) => ({
-                columnKey: filter.dimension,
+                columnKey: filter.dimension || filter.measure,
+                scope: filter.scope,
                 operator: filter.operator,
                 filterValue: filter.value,
                 position: index
@@ -350,8 +343,13 @@ export function createWidgetBuilder(ctx) {
                 dataset: getProp(widget, 'datasetKey', 'DatasetKey'),
                 dimensions: (getProp(widget, 'dimensions', 'Dimensions') || []).map(keyOf),
                 measures: (getProp(widget, 'measures', 'Measures') || []).map(keyOf),
-                filters: (getProp(widget, 'filters', 'Filters') || []).map(filter => ({
+                filters: (getProp(widget, 'filters', 'Filters') || []).filter(filter => getProp(filter, 'scope', 'Scope') !== 'having').map(filter => ({
                     dimension: getProp(filter, 'columnKey', 'ColumnKey'),
+                    operator: getProp(filter, 'operator', 'Operator'),
+                    value: getProp(filter, 'filterValue', 'FilterValue')
+                })),
+                havingFilters: (getProp(widget, 'filters', 'Filters') || []).filter(filter => getProp(filter, 'scope', 'Scope') === 'having').map(filter => ({
+                    measure: getProp(filter, 'columnKey', 'ColumnKey'),
                     operator: getProp(filter, 'operator', 'Operator'),
                     value: getProp(filter, 'filterValue', 'FilterValue')
                 })),
@@ -421,6 +419,7 @@ export function createWidgetBuilder(ctx) {
         $('datasetSelect').addEventListener('change', async () => {
             clearError($('widgetModalError'));
             $('widgetFilters').replaceChildren();
+            $('widgetHavingFilters').replaceChildren();
 
             try {
                 await loadMetadata();
@@ -430,6 +429,7 @@ export function createWidgetBuilder(ctx) {
         });
 
         $('addWidgetFilter').addEventListener('click', () => addFilterRow());
+        $('addWidgetHavingFilter').addEventListener('click', () => addFilterRow(null, true));
 
         $('widgetForm').addEventListener('submit', event => {
             event.preventDefault();
