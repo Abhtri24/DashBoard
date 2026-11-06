@@ -4,6 +4,8 @@
 
 import {
     loadUIConfiguration,
+    loadDepartments,
+    loadSelectedDepartment,
     saveDepartment,
     loadDashboards,
     loadDashboard as fetchDashboard,
@@ -487,6 +489,30 @@ import { createWidgetBuilder } from './widget-builder.js';
 
     async function initialize() {
         try {
+            const departments = await loadDepartments();
+            if (!departments.length) {
+                throw new Error('No active departments are configured. Configure at least one row in dash.Department.');
+            }
+
+            departmentSelect.replaceChildren(
+                ...departments.map(item => new Option(item.label, item.key))
+            );
+
+            let selectedDepartment = null;
+            try {
+                const selected = await loadSelectedDepartment();
+                selectedDepartment = selected.department || selected.Department;
+            } catch {
+                // A missing session selection is expected on a new browser session.
+            }
+
+            if (!departments.some(item => item.key === selectedDepartment)) {
+                selectedDepartment = departments[0].key;
+                await saveDepartment(selectedDepartment);
+            }
+
+            departmentSelect.value = selectedDepartment;
+
             const demoUsers = await loadDemoUsers();
 
             demoUserSelect.replaceChildren(
@@ -518,7 +544,6 @@ import { createWidgetBuilder } from './widget-builder.js';
             uiConfiguration = await loadUIConfiguration();
             applyUILabels();
 
-            await saveDepartment(getDepartment());
             await refreshDashboardList();
             await loadDashboard();
         } catch (error) {
