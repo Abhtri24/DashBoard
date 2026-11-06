@@ -283,7 +283,7 @@ public sealed class AggregationSqlGenerator
 							_ => throw new InvalidOperationException()
 						};
 
-						parameters[parameter] = filter.Value;
+						parameters[parameter] = ConvertParameterValue(filter.Value, filter.DataType);
 
 						whereParts.Add(
 							$"{column} {sqlOperator} {parameter}");
@@ -316,15 +316,13 @@ public sealed class AggregationSqlGenerator
 
 				case "in":
 					{
-						var values = filter.Value switch
-						{
-							object[] typedValues => typedValues,
-							string text => text.Split(
+						var values = (filter.Value ?? "")
+							.Split(
 								',',
 								StringSplitOptions.TrimEntries |
-								StringSplitOptions.RemoveEmptyEntries).Cast<object>().ToArray(),
-							_ => Array.Empty<object>()
-						};
+								StringSplitOptions.RemoveEmptyEntries)
+							.Select(value => ConvertParameterValue(value, filter.DataType))
+							.ToArray();
 
 						if (values.Length == 0)
 						{
@@ -421,6 +419,24 @@ public sealed class AggregationSqlGenerator
 			Sql = sql.ToString(),
 			Parameters = parameters
 		};
+	}
+
+	private static object? ConvertParameterValue(string? value, string dataType)
+	{
+		if (value is null) return null;
+		var type = dataType.Trim().ToLowerInvariant();
+		if (type.Contains("bigint")) return long.Parse(value, CultureInfo.InvariantCulture);
+		if (type.Contains("smallint")) return short.Parse(value, CultureInfo.InvariantCulture);
+		if (type.Contains("tinyint")) return byte.Parse(value, CultureInfo.InvariantCulture);
+		if (type.Contains("int")) return int.Parse(value, CultureInfo.InvariantCulture);
+		if (type.Contains("decimal") || type.Contains("numeric") || type.Contains("money"))
+			return decimal.Parse(value, CultureInfo.InvariantCulture);
+		if (type.Contains("float")) return double.Parse(value, CultureInfo.InvariantCulture);
+		if (type.Contains("real")) return float.Parse(value, CultureInfo.InvariantCulture);
+		if (type.Contains("bit")) return bool.Parse(value);
+		if (type.Contains("date") || type.Contains("time"))
+			return DateTime.Parse(value, CultureInfo.InvariantCulture);
+		return value;
 	}
 
 	// Converts a restricted expression tree into SQL.
