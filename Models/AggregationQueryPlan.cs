@@ -83,6 +83,8 @@ public sealed class AggregationFilter
 	public string Operator { get; set; } = "eq";
 
 	public string? Value { get; set; }
+
+	public string DataType { get; set; } = "nvarchar";
 }
 
 public sealed class AggregationSort
