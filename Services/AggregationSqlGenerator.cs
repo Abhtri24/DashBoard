@@ -316,11 +316,15 @@ public sealed class AggregationSqlGenerator
 
 				case "in":
 					{
-						var values = (filter.Value ?? "")
-							.Split(
+						var values = filter.Value switch
+						{
+							object[] typedValues => typedValues,
+							string text => text.Split(
 								',',
 								StringSplitOptions.TrimEntries |
-								StringSplitOptions.RemoveEmptyEntries);
+								StringSplitOptions.RemoveEmptyEntries).Cast<object>().ToArray(),
+							_ => Array.Empty<object>()
+						};
 
 						if (values.Length == 0)
 						{
