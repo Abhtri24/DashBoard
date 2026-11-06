@@ -406,10 +406,8 @@ public sealed class QueryBuilderService
 				SourceAlias = aliasById[table.DatasetTableId],
 				Column = column.SourceColumn ?? column.ColumnName,
 				Operator = GetString(filter, "operator"),
-				Value = ConvertFilterValue(
-					GetString(filter, "value"),
-					column.DataType,
-					GetString(filter, "operator"))
+				Value = GetString(filter, "value"),
+				DataType = column.DataType
 			});
 		}
 
