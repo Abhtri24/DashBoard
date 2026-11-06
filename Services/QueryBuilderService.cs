@@ -290,6 +290,22 @@ public sealed class QueryBuilderService
 				throw new ArgumentException("A filter operator is required.");
 		}
 
+		var havingFilters = request.TryGetProperty("havingFilters", out var havingArray) &&
+							havingArray.ValueKind == JsonValueKind.Array
+			? havingArray.EnumerateArray().ToList()
+			: [];
+
+		foreach (var filter in havingFilters)
+		{
+			var key = GetString(filter, "measure");
+			if (!measures.Contains(key, StringComparer.OrdinalIgnoreCase) ||
+				!columnsByKey.TryGetValue(key, out var column) ||
+				!string.Equals(column.Role, "measure", StringComparison.OrdinalIgnoreCase))
+				throw new ArgumentException($"Aggregate filter must reference a selected measure: '{key}'.");
+			if (string.IsNullOrWhiteSpace(GetString(filter, "operator")))
+				throw new ArgumentException("An aggregate filter operator is required.");
+		}
+
 		var referencedKeys = selectedKeys
 			.Concat(filters.Select(f => GetString(f, "dimension")))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
@@ -411,6 +427,19 @@ public sealed class QueryBuilderService
 			});
 		}
 
+		foreach (var filter in havingFilters)
+		{
+			var key = GetString(filter, "measure");
+			var column = columnsByKey[key];
+			plan.HavingFilters.Add(new AggregationHavingFilter
+			{
+				MeasureKey = key,
+				Operator = GetString(filter, "operator"),
+				Value = GetString(filter, "value"),
+				DataType = column.DataType
+			});
+		}
+
 		if (request.TryGetProperty("sort", out var sortArray) &&
 			sortArray.ValueKind == JsonValueKind.Array)
 		{
@@ -440,6 +469,7 @@ public sealed class QueryBuilderService
 			Dimensions = plan.Dimensions,
 			Measures = plan.Measures,
 			Filters = plan.Filters,
+			HavingFilters = plan.HavingFilters,
 			Sort = plan.Sort,
 			Page = plan.Page,
 			PageSize = plan.PageSize
