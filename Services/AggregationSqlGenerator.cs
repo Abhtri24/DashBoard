@@ -365,6 +365,49 @@ public sealed class AggregationSqlGenerator
 			sql.AppendLine("GROUP BY " + string.Join(", ", groupBy));
 		}
 
+		// Aggregate filters (HAVING) apply after grouping.
+		var havingParts = new List<string>();
+		foreach (var filter in query.HavingFilters)
+		{
+			var measure = query.Measures.FirstOrDefault(item =>
+				string.Equals(item.Key, filter.MeasureKey, StringComparison.OrdinalIgnoreCase));
+			if (measure == null)
+				throw new InvalidOperationException($"Aggregate filter references unselected measure '{filter.MeasureKey}'.");
+
+			string sourceExpression;
+			if (measure.Expression != null)
+				sourceExpression = BuildExpression(measure.Expression, joinPlan, schema);
+			else
+			{
+				ValidateSourceColumn(joinPlan, schema, measure.SourceAlias, measure.Column);
+				sourceExpression = ColumnReference(measure.SourceAlias, measure.Column);
+			}
+
+			var aggregateExpression = measure.Aggregation.Trim().ToUpperInvariant() switch
+			{
+				"SUM" => $"SUM({sourceExpression})",
+				"AVG" => $"AVG({sourceExpression})",
+				"MIN" => $"MIN({sourceExpression})",
+				"MAX" => $"MAX({sourceExpression})",
+				"COUNT" => $"COUNT({sourceExpression})",
+				"COUNT_DISTINCT" => $"COUNT(DISTINCT {sourceExpression})",
+				_ => throw new InvalidOperationException($"Unsupported aggregation '{measure.Aggregation}'.")
+			};
+
+			var operation = filter.Operator.Trim().ToLowerInvariant();
+			var sqlOperator = operation switch
+			{
+				"eq" => "=", "neq" => "<>", "gt" => ">", "gte" => ">=",
+				"lt" => "<", "lte" => "<=",
+				_ => throw new InvalidOperationException($"Unsupported aggregate filter operator '{filter.Operator}'.")
+			};
+			var parameter = $"@p{parameterIndex++}";
+			havingParts.Add($"{aggregateExpression} {sqlOperator} {parameter}");
+			parameters[parameter] = ConvertParameterValue(filter.Value, filter.DataType);
+		}
+		if (havingParts.Count > 0)
+			sql.AppendLine("HAVING " + string.Join(" AND ", havingParts));
+
 		// ORDER BY
 		var sortParts = new List<string>();
 
