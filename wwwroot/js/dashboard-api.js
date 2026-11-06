@@ -40,6 +40,19 @@ export async function loadUIConfiguration() {
     }
 }
 
+export async function loadDepartments() {
+    const result = await request('/api/dash/departments');
+    return (Array.isArray(result) ? result : [])
+        .map(item => ({
+            key: item.key || item.Key,
+            label: item.label || item.Label || item.key || item.Key
+        }));
+}
+
+export async function loadSelectedDepartment() {
+    return request('/api/dash/department');
+}
+
 export async function saveDepartment(department) {
     const response = await fetch('/api/dash/department', {
         method: 'POST',
