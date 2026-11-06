@@ -185,6 +185,14 @@ public sealed class AggregationQueryValidator
 			}
 		}
 
+		foreach (var filter in plan.HavingFilters)
+		{
+			if (!plan.Measures.Any(measure => string.Equals(measure.Key, filter.MeasureKey, StringComparison.OrdinalIgnoreCase)))
+				errors.Add($"Aggregate filter references unselected measure '{filter.MeasureKey}'.");
+			if (!new[] { "eq", "neq", "gt", "gte", "lt", "lte" }.Contains(filter.Operator, StringComparer.OrdinalIgnoreCase))
+				errors.Add($"Unsupported aggregate filter operator '{filter.Operator}'.");
+		}
+
 		// Sorting
 		foreach (var sort in plan.Sort)
 		{
