@@ -424,6 +424,8 @@ public sealed class AggregationSqlGenerator
 	private static object? ConvertParameterValue(string? value, string dataType)
 	{
 		if (value is null) return null;
+		try
+		{
 		var type = dataType.Trim().ToLowerInvariant();
 		if (type.Contains("bigint")) return long.Parse(value, CultureInfo.InvariantCulture);
 		if (type.Contains("smallint")) return short.Parse(value, CultureInfo.InvariantCulture);
@@ -437,6 +439,15 @@ public sealed class AggregationSqlGenerator
 		if (type.Contains("date") || type.Contains("time"))
 			return DateTime.Parse(value, CultureInfo.InvariantCulture);
 		return value;
+		}
+		catch (FormatException)
+		{
+			throw new ArgumentException($"'{value}' is not a valid value for database type '{dataType}'.");
+		}
+		catch (OverflowException)
+		{
+			throw new ArgumentException($"'{value}' is outside the supported range for database type '{dataType}'.");
+		}
 	}
 
 	// Converts a restricted expression tree into SQL.
