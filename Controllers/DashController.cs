@@ -228,24 +228,48 @@ public class DashController : ControllerBase
 	}
 
 
-	[HttpPost("department")]
-	public IActionResult SetDepartment([FromBody] DepartmentRequest request)
+	[HttpGet("departments")]
+	public async Task<IActionResult> GetDepartments(CancellationToken cancellationToken)
 	{
-		var allowedDepartments = new[]
-		{
-		"sales",
-		"finance",
-		"hr",
-		"operations"
-	};
+		await using var connection = await _db.OpenAsync();
+		const string sql = """
+			SELECT DepartmentKey AS [key], DisplayName AS [label]
+			FROM dash.Department
+			WHERE IsActive = 1
+			ORDER BY SortOrder, DisplayName;
+			""";
 
-		var department = request.Department?.Trim().ToLowerInvariant();
+		var departments = await connection.QueryAsync(
+			new CommandDefinition(sql, cancellationToken: cancellationToken));
 
-		if (department is null || !allowedDepartments.Contains(department))
-			return BadRequest(new { error = "Invalid department." });
+		return Ok(departments);
+	}
+
+	[HttpPost("department")]
+	public async Task<IActionResult> SetDepartment(
+		[FromBody] DepartmentRequest request,
+		CancellationToken cancellationToken)
+	{
+		var department = request.Department?.Trim();
+
+		if (string.IsNullOrWhiteSpace(department))
+			return BadRequest(new { error = "Select a department." });
+
+		await using var connection = await _db.OpenAsync();
+		const string sql = """
+			SELECT COUNT(1)
+			FROM dash.Department
+			WHERE DepartmentKey = @Department
+			  AND IsActive = 1;
+			""";
+
+		var exists = await connection.ExecuteScalarAsync<int>(
+			new CommandDefinition(sql, new { Department = department }, cancellationToken: cancellationToken));
+
+		if (exists == 0)
+			return BadRequest(new { error = "The selected department is not configured or is inactive." });
 
 		HttpContext.Session.SetString(DepartmentSessionKey, department);
-
 		return Ok(new { department });
 	}
 
