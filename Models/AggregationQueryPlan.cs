@@ -13,6 +13,8 @@ public sealed class AggregationQueryPlan
 
 	public List<AggregationFilter> Filters { get; set; } = [];
 
+	public List<AggregationHavingFilter> HavingFilters { get; set; } = [];
+
 	public List<AggregationSort> Sort { get; set; } = [];
 
 	public int Page { get; set; } = 1;
@@ -92,4 +94,12 @@ public sealed class AggregationSort
 	public string Field { get; set; } = "";
 
 	public string Direction { get; set; } = "asc";
+}
+
+public sealed class AggregationHavingFilter
+{
+	public string MeasureKey { get; set; } = "";
+	public string Operator { get; set; } = "gt";
+	public string? Value { get; set; }
+	public string DataType { get; set; } = "decimal";
 }
