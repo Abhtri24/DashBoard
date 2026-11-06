@@ -66,8 +66,8 @@ export function createWidgetBuilder(ctx) {
     }
 
     function getColumnType(columnKey) {
-        const column = dimensions.find(item =>
-            String(keyOf(item)).toLowerCase() === String(columnKey).toLowerCase()
+        const column = [...dimensions, ...measures].find(item =>
+            String(item.key || item.Key || keyOf(item)).toLowerCase() === String(columnKey).toLowerCase()
         );
         return String(getProp(column, 'type', 'Type') || 'string').toLowerCase();
     }
@@ -155,7 +155,7 @@ export function createWidgetBuilder(ctx) {
         value.className = 'form-control filter-value';
         value.placeholder = 'Value';
 
-        dimensions.forEach(item => {
+        [...dimensions, ...measures].forEach(item => {
             field.add(new Option(item.label || item.Label, item.key || item.Key));
         });
 
