@@ -200,6 +200,123 @@ export function createWidgetBuilder(ctx) {
         return filters;
     }
 
+    function getSortFields() {
+        const fields = [];
+        const dimensionKey = $('dimensionSelect').value;
+        const measureKey = $('measureSelect').value;
+
+        const dimension = dimensions.find(item =>
+            String(item.key || item.Key).toLowerCase() === dimensionKey.toLowerCase()
+        );
+        const measure = measures.find(item =>
+            String(item.key || item.Key).toLowerCase() === measureKey.toLowerCase()
+        );
+
+        if (dimensionKey) {
+            fields.push({
+                key: dimensionKey,
+                label: dimension?.label || dimension?.Label || dimensionKey
+            });
+        }
+
+        if (measureKey) {
+            fields.push({
+                key: measureKey,
+                label: measure?.label || measure?.Label || measureKey
+            });
+        }
+
+        return fields;
+    }
+
+    function updateSortFieldOptions(row) {
+        const field = row.querySelector('.sort-field');
+        const previous = field.value;
+        const fields = getSortFields();
+
+        field.replaceChildren(
+            ...fields.map(item => new Option(item.label, item.key))
+        );
+
+        if (!fields.length) {
+            field.disabled = true;
+            return;
+        }
+
+        field.disabled = false;
+        field.value = fields.some(item => item.key === previous)
+            ? previous
+            : (fields.find(item => item.key === $('measureSelect').value)?.key || fields[0].key);
+    }
+
+    function refreshSortRows() {
+        document.querySelectorAll('#widgetSorts .widget-sort-row')
+            .forEach(updateSortFieldOptions);
+    }
+
+    function addSortRow(existing = null) {
+        const row = document.createElement('div');
+        row.className = 'row g-2 align-items-center widget-sort-row';
+
+        const field = document.createElement('select');
+        field.className = 'form-select sort-field';
+
+        const direction = document.createElement('select');
+        direction.className = 'form-select sort-direction';
+        direction.replaceChildren(
+            new Option('Ascending (A–Z / Low–High)', 'asc'),
+            new Option('Descending (Z–A / High–Low)', 'desc')
+        );
+        direction.value = String(existing?.direction || existing?.Direction || 'desc').toLowerCase();
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn btn-outline-secondary';
+        remove.textContent = 'Remove';
+        remove.addEventListener('click', () => row.remove());
+
+        const fieldCol = document.createElement('div');
+        fieldCol.className = 'col-md-6';
+        fieldCol.append(field);
+
+        const directionCol = document.createElement('div');
+        directionCol.className = 'col-md-4';
+        directionCol.append(direction);
+
+        const removeCol = document.createElement('div');
+        removeCol.className = 'col-md-2';
+        removeCol.append(remove);
+
+        row.append(fieldCol, directionCol, removeCol);
+        $('widgetSorts').append(row);
+        updateSortFieldOptions(row);
+
+        const requestedField = existing?.field || existing?.Field;
+        if (requestedField && Array.from(field.options).some(option => option.value === requestedField)) {
+            field.value = requestedField;
+        }
+    }
+
+    function collectSorts() {
+        const sorts = [];
+        const selectedFields = new Set();
+
+        document.querySelectorAll('#widgetSorts .widget-sort-row').forEach(row => {
+            const field = row.querySelector('.sort-field').value;
+            const direction = row.querySelector('.sort-direction').value;
+
+            if (!field) throw new Error('Choose a field for each sort rule.');
+            if (selectedFields.has(field.toLowerCase())) {
+                throw new Error('Each field can only appear once in the sort rules.');
+            }
+
+            selectedFields.add(field.toLowerCase());
+            sorts.push({ field, direction });
+        });
+
+        return sorts;
+    }
+
     function queryPayload() {
         const type = $('widgetTypeSelect').value;
         const dimension = $('dimensionSelect').value;
@@ -222,7 +339,7 @@ export function createWidgetBuilder(ctx) {
             measures: [measure],
             filters: collectFilters('widgetFilters'),
             havingFilters: collectFilters('widgetHavingFilters'),
-            sort: [{ field: measure, direction: 'desc' }],
+            sort: collectSorts(),
             page: 1,
             pageSize: 100
         };
@@ -233,6 +350,7 @@ export function createWidgetBuilder(ctx) {
         $('widgetForm').reset();
         $('widgetFilters').replaceChildren();
         $('widgetHavingFilters').replaceChildren();
+        $('widgetSorts').replaceChildren();
 
         $('editingWidgetKey').value = widget
             ? getProp(widget, 'widgetKey', 'WidgetKey')
@@ -274,6 +392,13 @@ export function createWidgetBuilder(ctx) {
                 .filter(filter => filter.scope === 'having' || filter.Scope === 'having')
                 .forEach(filter => addFilterRow(filter, true));
 
+            const configuredSorts = getProp(widget, 'sort', 'Sort');
+            if (Array.isArray(configuredSorts) && configuredSorts.length) {
+                configuredSorts.forEach(addSortRow);
+            } else {
+                addSortRow({ field: measure ? keyOf(measure) : $('measureSelect').value, direction: 'desc' });
+            }
+
             updateDimensionVisibility();
         } catch (error) {
             showError(error.message, $('widgetModalError'));
@@ -311,6 +436,7 @@ export function createWidgetBuilder(ctx) {
                 columnKey: dimensionKey,
                 labelOverride: dimension?.label || dimension?.Label
             }] : [],
+            sort: collectSorts(),
             filters: filters.map((filter, index) => ({
                 columnKey: filter.dimension || filter.measure,
                 scope: filter.scope,
@@ -353,7 +479,7 @@ export function createWidgetBuilder(ctx) {
                     operator: getProp(filter, 'operator', 'Operator'),
                     value: getProp(filter, 'filterValue', 'FilterValue')
                 })),
-                sort: [{
+                sort: getProp(widget, 'sort', 'Sort') || [{
                     field: keyOf(getProp(widget, 'measures', 'Measures')?.[0]),
                     direction: 'desc'
                 }],
@@ -423,6 +549,8 @@ export function createWidgetBuilder(ctx) {
 
             try {
                 await loadMetadata();
+                $('widgetSorts').replaceChildren();
+                addSortRow({ field: $('measureSelect').value, direction: 'desc' });
             } catch (error) {
                 showError(error.message, $('widgetModalError'));
             }
@@ -430,6 +558,10 @@ export function createWidgetBuilder(ctx) {
 
         $('addWidgetFilter').addEventListener('click', () => addFilterRow());
         $('addWidgetHavingFilter').addEventListener('click', () => addFilterRow(null, true));
+        $('addWidgetSort').addEventListener('click', () => addSortRow());
+
+        $('dimensionSelect').addEventListener('change', refreshSortRows);
+        $('measureSelect').addEventListener('change', refreshSortRows);
 
         $('widgetForm').addEventListener('submit', event => {
             event.preventDefault();
