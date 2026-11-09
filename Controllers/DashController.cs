@@ -354,8 +354,6 @@ public class DashController : ControllerBase
 		if (!await HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
 			return StatusCode(403, new { error = "You do not have access to the selected department." });
 
-		await using var connection = await _db.OpenAsync();
-
 		HttpContext.Session.SetString(DepartmentSessionKey, department);
 		return Ok(new { department });
 	}
