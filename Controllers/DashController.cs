@@ -425,6 +425,10 @@ public class DashController : ControllerBase
 		[FromBody] JsonElement request,
 		CancellationToken cancellationToken)
 	{
+		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
+		if (accessError is not null)
+			return accessError;
+
 		try
 		{
 			return Ok(await _queryBuilderService.ExecuteAsync(
@@ -525,6 +529,10 @@ public async Task<IActionResult> GetRelationships(
 	[FromQuery] string department,
 	CancellationToken cancellationToken)
 	{
+		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
+		if (accessError is not null)
+			return accessError;
+
 		var dashboard = await _dashboardConfigurationService.GetDashboardAsync(
 			dashboardKey,
 			department,
