@@ -263,7 +263,7 @@ export function createWidgetBuilder(ctx) {
 
         const direction = document.createElement('select');
         direction.className = 'form-select sort-direction';
-        direction.add(
+        direction.replaceChildren(
             new Option('Ascending (A–Z / Low–High)', 'asc'),
             new Option('Descending (Z–A / High–Low)', 'desc')
         );
