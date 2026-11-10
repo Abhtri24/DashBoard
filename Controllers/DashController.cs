@@ -94,6 +94,22 @@ public class DashController : ControllerBase
 	
 	private const string DepartmentSessionKey = "ActiveDepartment";
 	private const string DemoUserSessionKey = "ActiveDemoUserId";
+	private const string DashboardTabHeader = "X-Dashboard-Tab";
+
+	private string GetTabSessionKey(string key)
+	{
+		var tabId = Request.Headers[DashboardTabHeader].ToString();
+		if (!Guid.TryParse(tabId, out var parsedTabId))
+			throw new InvalidOperationException($"A valid {DashboardTabHeader} header is required.");
+
+		return $"{key}:{parsedTabId:N}";
+	}
+
+	private int? GetActiveDemoUserId() =>
+		HttpContext.Session.GetInt32(GetTabSessionKey(DemoUserSessionKey));
+
+	private string? GetActiveDepartment() =>
+		HttpContext.Session.GetString(GetTabSessionKey(DepartmentSessionKey));
 		
 	private async Task<bool> HasDepartmentAccessAsync(
 		int userId,
@@ -152,7 +168,7 @@ public class DashController : ControllerBase
 		string? department,
 		CancellationToken cancellationToken)
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 		if (!userId.HasValue)
 			return BadRequest(new { error = "Select a demo user first." });
 
@@ -225,15 +241,15 @@ public class DashController : ControllerBase
 		if (!exists)
 			return BadRequest(new { error = "The selected demo user does not exist, is inactive, or has no active department membership." });
 
-		HttpContext.Session.SetInt32(DemoUserSessionKey, request.UserId);
-		HttpContext.Session.Remove(DepartmentSessionKey);
+		HttpContext.Session.SetInt32(GetTabSessionKey(DemoUserSessionKey), request.UserId);
+		HttpContext.Session.Remove(GetTabSessionKey(DepartmentSessionKey));
 		return Ok(new { userId = request.UserId });
 	}
 
 	[HttpGet("demo-user")]
 	public IActionResult GetDemoUser()
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 		return userId.HasValue
 			? Ok(new { userId })
 			: BadRequest(new { error = "No demo user selected." });
@@ -250,7 +266,7 @@ public class DashController : ControllerBase
 		[FromQuery] string department,
 		CancellationToken cancellationToken)
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 		if (!userId.HasValue)
 			return BadRequest(new { error = "Select a demo user first." });
 
@@ -281,7 +297,7 @@ public class DashController : ControllerBase
 		[FromBody] JsonElement layout,
 		CancellationToken cancellationToken)
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 		if (!userId.HasValue)
 			return BadRequest(new { error = "Select a demo user first." });
 
@@ -340,7 +356,7 @@ public class DashController : ControllerBase
 	[FromQuery] string department,
 	CancellationToken cancellationToken)
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 
 		if (!userId.HasValue)
 			return BadRequest(new { error = "Select a demo user first." });
@@ -388,7 +404,7 @@ public class DashController : ControllerBase
 		[FromBody] JsonElement layout,
 		CancellationToken cancellationToken)
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 
 		if (!userId.HasValue)
 			return BadRequest(new { error = "Select a demo user first." });
@@ -502,7 +518,7 @@ public class DashController : ControllerBase
 		[FromQuery] string department,
 		CancellationToken cancellationToken)
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 
 		if (!userId.HasValue)
 			return BadRequest(new { error = "Select a demo user first." });
@@ -581,7 +597,7 @@ public class DashController : ControllerBase
 		[FromBody] DashboardPresetRequest request,
 		CancellationToken cancellationToken)
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 		if (!userId.HasValue) return BadRequest(new { error = "Select a demo user first." });
 		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
 		if (accessError is not null) return accessError;
@@ -641,7 +657,7 @@ public class DashController : ControllerBase
 		[FromBody] DashboardPresetRequest request,
 		CancellationToken cancellationToken)
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 		if (!userId.HasValue) return BadRequest(new { error = "Select a demo user first." });
 		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
 		if (accessError is not null) return accessError;
@@ -687,7 +703,7 @@ public class DashController : ControllerBase
 		[FromQuery] string department,
 		CancellationToken cancellationToken)
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 		if (!userId.HasValue) return BadRequest(new { error = "Select a demo user first." });
 		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
 		if (accessError is not null) return accessError;
@@ -717,7 +733,7 @@ public class DashController : ControllerBase
 	[HttpGet("departments")]
 	public async Task<IActionResult> GetDepartments(CancellationToken cancellationToken)
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 		if (!userId.HasValue)
 			return BadRequest(new { error = "Select a demo user first." });
 
@@ -750,7 +766,7 @@ public class DashController : ControllerBase
 		CancellationToken cancellationToken)
 	{
 		var department = request.Department?.Trim();
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 
 		if (!userId.HasValue)
 			return BadRequest(new { error = "Select a demo user first." });
@@ -761,24 +777,24 @@ public class DashController : ControllerBase
 		if (!await HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
 			return StatusCode(403, new { error = "You do not have access to the selected department." });
 
-		HttpContext.Session.SetString(DepartmentSessionKey, department);
+		HttpContext.Session.SetString(GetTabSessionKey(DepartmentSessionKey), department);
 		return Ok(new { department });
 	}
 
 	[HttpGet("department")]
 	public async Task<IActionResult> GetDepartment(CancellationToken cancellationToken)
 	{
-		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		var userId = GetActiveDemoUserId();
 		if (!userId.HasValue)
 			return BadRequest(new { error = "Select a demo user first." });
 
-		var department = HttpContext.Session.GetString(DepartmentSessionKey);
+		var department = GetActiveDepartment();
 		if (string.IsNullOrWhiteSpace(department))
 			return BadRequest(new { error = "No department selected." });
 
 		if (!await HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
 		{
-			HttpContext.Session.Remove(DepartmentSessionKey);
+			HttpContext.Session.Remove(GetTabSessionKey(DepartmentSessionKey));
 			return StatusCode(403, new { error = "The selected department is not assigned to this user." });
 		}
 
