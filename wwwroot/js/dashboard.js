@@ -18,6 +18,9 @@ import {
     loadSelectedDemoUser,
     loadUserLayout,
     saveUserLayout,
+    loadDepartmentLayout,
+    publishDepartmentLayout,
+    deleteDepartmentLayout,
     loadDrilldown
 } from './dashboard-api.js';
 
@@ -190,6 +193,22 @@ import { createWidgetBuilder } from './widget-builder.js';
     let editMode = false;
     let activeUserId = null;
 
+    let departmentRoles = new Map();
+
+    function updateDepartmentLayoutControls() {
+        const role = departmentRoles.get(getDepartment());
+
+        const isAdmin = String(role || '').toLowerCase() === 'admin';
+
+        $('publishDepartmentLayoutButton').classList.toggle(
+            'd-none', !isAdmin
+        );
+
+        $('removeDepartmentLayoutButton').classList.toggle(
+            'd-none', !isAdmin
+        );
+    }
+
     const CACHE_TTL_MS = 5 * 60 * 1000;
 
     let uiConfiguration = {
@@ -278,6 +297,41 @@ import { createWidgetBuilder } from './widget-builder.js';
     }
 
     async function loadPersonalizedLayout() {
+        // Start with the dashboard's configured widgets.
+        widgets = [
+            ...(currentDashboard.widgets ||
+                currentDashboard.Widgets || [])
+        ];
+
+        // Department layout is the shared default.
+        const departmentLayout = await loadDepartmentLayout(
+            getDepartment(),
+            getDashboardKey()
+        );
+
+        const departmentJson =
+            departmentLayout?.layoutJson ||
+            departmentLayout?.LayoutJson;
+
+        if (departmentJson) {
+            widgets = JSON.parse(departmentJson);
+        }
+
+        // A personal saved layout overrides the shared default.
+        const saved = await loadUserLayout(
+            getDepartment(),
+            getDashboardKey()
+        );
+
+        const personalJson =
+            saved?.layoutJson ||
+            saved?.LayoutJson;
+
+        if (personalJson) {
+            widgets = JSON.parse(personalJson);
+        }
+
+        // An unsaved local draft takes highest priority.
         const draft = sessionStorage.getItem(storageKey('draft'));
 
         if (draft) {
@@ -288,17 +342,6 @@ import { createWidgetBuilder } from './widget-builder.js';
             } catch {
                 sessionStorage.removeItem(storageKey('draft'));
             }
-        }
-
-        const saved = await loadUserLayout(
-            getDepartment(),
-            getDashboardKey()
-        );
-
-        const json = saved?.layoutJson || saved?.LayoutJson;
-
-        if (json) {
-            widgets = JSON.parse(json);
         }
 
         setLayoutButtons(false);
@@ -423,6 +466,53 @@ import { createWidgetBuilder } from './widget-builder.js';
             }
         });
 
+        $('publishDepartmentLayoutButton').addEventListener(
+            'click',
+            async () => {
+                try {
+                    await publishDepartmentLayout(
+                        getDepartment(),
+                        getDashboardKey(),
+                        widgets
+                    );
+
+                    notice.textContent =
+                        'Layout published for the entire department.';
+
+                    notice.classList.remove('d-none');
+                } catch (error) {
+                    showError(error.message);
+                }
+            }
+        );
+
+        $('removeDepartmentLayoutButton').addEventListener(
+            'click',
+            async () => {
+                const confirmed = confirm(
+                    'Remove the published department layout? Users without a personal layout will return to the configured dashboard.'
+                );
+
+                if (!confirmed) return;
+
+                try {
+                    await deleteDepartmentLayout(
+                        getDepartment(),
+                        getDashboardKey()
+                    );
+
+                    await loadDashboard();
+
+                    notice.textContent =
+                        'Department layout removed.';
+
+                    notice.classList.remove('d-none');
+                } catch (error) {
+                    showError(error.message);
+                }
+            }
+        );
+
         $('discardLayoutButton').addEventListener('click', async () => {
             sessionStorage.removeItem(storageKey('draft'));
             await loadDashboard();
@@ -439,6 +529,9 @@ import { createWidgetBuilder } from './widget-builder.js';
                 activeUserId = Number(demoUserSelect.value);
 
                 const departments = await loadDepartments();
+                departmentRoles = new Map(
+                    departments.map(item => [item.key, item.role])
+                );
                 if (!departments.length) {
                     throw new Error('This user has no active department memberships.');
                 }
@@ -448,6 +541,7 @@ import { createWidgetBuilder } from './widget-builder.js';
                 );
 
                 await saveDepartment(departments[0].key);
+                updateDepartmentLayoutControls();
                 await refreshDashboardList();
                 await loadDashboard();
             } catch (error) {
@@ -488,6 +582,7 @@ import { createWidgetBuilder } from './widget-builder.js';
 
             try {
                 await saveDepartment(getDepartment());
+                updateDepartmentLayoutControls();
                 await refreshDashboardList();
                 await loadDashboard();
             } catch (error) {
@@ -533,6 +628,8 @@ import { createWidgetBuilder } from './widget-builder.js';
             demoUserSelect.value = String(activeUserId);
 
             const departments = await loadDepartments();
+            departmentRoles = new Map(
+                departments.map(item => [item.key, item.role]));
             if (!departments.length) {
                 throw new Error('This user has no active department memberships.');
             }
@@ -555,6 +652,7 @@ import { createWidgetBuilder } from './widget-builder.js';
             }
 
             departmentSelect.value = selectedDepartment;
+            updateDepartmentLayoutControls();
 
             uiConfiguration = await loadUIConfiguration();
             applyUILabels();

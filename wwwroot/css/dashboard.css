@@ -125,3 +125,26 @@
         height: 260px;
     }
 }
+
+#widgetModal .modal-dialog {
+    max-height: calc(100vh - 2rem);
+}
+
+#widgetModal .modal-content {
+    max-height: calc(100vh - 2rem);
+    display: flex;
+    flex-direction: column;
+}
+
+#widgetModal #widgetForm {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+#widgetModal .modal-body {
+    min-height: 0;
+    overflow-y: auto;
+    flex: 1 1 auto;
+}

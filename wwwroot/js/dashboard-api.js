@@ -172,6 +172,32 @@ export async function saveUserLayout(department, dashboardKey, widgets) {
             body: JSON.stringify(widgets)
         }
     );
+
+
+}
+
+export async function loadDepartmentLayout(department, dashboardKey) {
+    return request(
+        `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/department-layout?department=${encodeURIComponent(department)}`
+    );
+}
+
+export async function publishDepartmentLayout(department, dashboardKey, widgets) {
+    return request(
+        `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/department-layout?department=${encodeURIComponent(department)}`,
+        {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(widgets)
+        }
+    );
+}
+
+export async function deleteDepartmentLayout(department, dashboardKey) {
+    return request(
+        `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/department-layout?department=${encodeURIComponent(department)}`,
+        { method: 'DELETE' }
+    );
 }
 
 export async function loadDrilldown(payload) {

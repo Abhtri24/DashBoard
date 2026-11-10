@@ -94,7 +94,7 @@ public class DashController : ControllerBase
 	
 	private const string DepartmentSessionKey = "ActiveDepartment";
 	private const string DemoUserSessionKey = "ActiveDemoUserId";
-
+		
 	private async Task<bool> HasDepartmentAccessAsync(
 		int userId,
 		string department,
@@ -114,6 +114,33 @@ public class DashController : ControllerBase
 			) THEN 1 ELSE 0 END;
 			""";
 
+		return await connection.ExecuteScalarAsync<bool>(
+			new CommandDefinition(
+				sql,
+				new { UserId = userId, Department = department },
+				cancellationToken: cancellationToken));
+	}
+
+
+	private async Task<bool> HasDepartmentAdminAccessAsync(
+		int userId,
+		string department,
+		CancellationToken cancellationToken)
+	{
+		await using var connection = await _db.OpenAsync();
+		const string sql = """
+			SELECT CASE WHEN EXISTS
+			      (
+			          SELECT 1
+			          FROM org.UserDepartment ud
+			          INNER JOIN dash.Department d
+			              ON d.DepartmentKey = ud.DepartmentKey
+			          WHERE ud.UserId = @UserId
+			            AND ud.DepartmentKey = @Department
+			            AND ud.DepartmentRole = N'Admin'
+			            AND d.IsActive = 1
+			      ) THEN 1 ELSE 0 END;
+			""";
 		return await connection.ExecuteScalarAsync<bool>(
 			new CommandDefinition(
 				sql,
@@ -304,6 +331,219 @@ public class DashController : ControllerBase
 			new { UserId = userId.Value, DashboardKey = dashboardKey, DepartmentKey = department, LayoutJson = layoutJson },
 			cancellationToken: cancellationToken));
 		return Ok(new { saved = true });
+	}
+
+
+	[HttpGet("dashboard/{dashboardKey}/department-layout")]
+	public async Task<IActionResult> GetDepartmentLayout(
+	string dashboardKey,
+	[FromQuery] string department,
+	CancellationToken cancellationToken)
+	{
+		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+
+		if (!userId.HasValue)
+			return BadRequest(new { error = "Select a demo user first." });
+
+		var accessError = await CheckDepartmentAccessAsync(
+			department, cancellationToken);
+
+		if (accessError is not null)
+			return accessError;
+
+		if (string.IsNullOrWhiteSpace(dashboardKey))
+			return BadRequest(new { error = "Dashboard is required." });
+
+		await using var connection = await _db.OpenAsync();
+
+		const string sql = """
+        SELECT
+            LayoutJson,
+            PublishedByUserId,
+            PublishedAt,
+            UpdatedAt
+        FROM dash.DepartmentDashboardLayout
+        WHERE DepartmentKey = @DepartmentKey
+          AND DashboardKey = @DashboardKey;
+        """;
+
+		var layout = await connection.QuerySingleOrDefaultAsync(
+			new CommandDefinition(
+				sql,
+				new
+				{
+					DepartmentKey = department,
+					DashboardKey = dashboardKey
+				},
+				cancellationToken: cancellationToken));
+
+		return Ok(layout);
+	}
+
+
+	[HttpPut("dashboard/{dashboardKey}/department-layout")]
+	public async Task<IActionResult> PublishDepartmentLayout(
+		string dashboardKey,
+		[FromQuery] string department,
+		[FromBody] JsonElement layout,
+		CancellationToken cancellationToken)
+	{
+		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+
+		if (!userId.HasValue)
+			return BadRequest(new { error = "Select a demo user first." });
+
+		var accessError = await CheckDepartmentAccessAsync(
+			department, cancellationToken);
+
+		if (accessError is not null)
+			return accessError;
+
+		if (!await HasDepartmentAdminAccessAsync(
+			userId.Value, department, cancellationToken))
+		{
+			return StatusCode(403, new
+			{
+				error = "Only department admins can publish department layouts."
+			});
+		}
+
+		if (string.IsNullOrWhiteSpace(dashboardKey))
+			return BadRequest(new { error = "Dashboard is required." });
+
+		if (layout.ValueKind != JsonValueKind.Array)
+			return BadRequest(new
+			{
+				error = "Layout must be a JSON array of widgets."
+			});
+
+		var layoutJson = layout.GetRawText();
+
+		if (layoutJson.Length > 1_000_000)
+			return BadRequest(new
+			{
+				error = "Layout is too large (maximum 1 MB)."
+			});
+
+		await using var connection = await _db.OpenAsync();
+
+		const string dashboardSql = """
+        SELECT COUNT(1)
+        FROM dash.Dashboard
+        WHERE DashboardKey = @DashboardKey
+          AND DepartmentKey = @DepartmentKey
+          AND IsActive = 1;
+        """;
+
+		var validDashboard = await connection.ExecuteScalarAsync<int>(
+			new CommandDefinition(
+				dashboardSql,
+				new
+				{
+					DashboardKey = dashboardKey,
+					DepartmentKey = department
+				},
+				cancellationToken: cancellationToken));
+
+		if (validDashboard == 0)
+			return NotFound(new
+			{
+				error = "Dashboard not found for this department."
+			});
+
+		const string upsertSql = """
+        UPDATE dash.DepartmentDashboardLayout
+        SET
+            LayoutJson = @LayoutJson,
+            PublishedByUserId = @UserId,
+            PublishedAt = SYSUTCDATETIME(),
+            UpdatedAt = SYSUTCDATETIME()
+        WHERE DepartmentKey = @DepartmentKey
+          AND DashboardKey = @DashboardKey;
+
+        IF @@ROWCOUNT = 0
+        BEGIN
+            INSERT INTO dash.DepartmentDashboardLayout
+            (
+                DepartmentKey,
+                DashboardKey,
+                LayoutJson,
+                PublishedByUserId
+            )
+            VALUES
+            (
+                @DepartmentKey,
+                @DashboardKey,
+                @LayoutJson,
+                @UserId
+            );
+        END;
+        """;
+
+		await connection.ExecuteAsync(
+			new CommandDefinition(
+				upsertSql,
+				new
+				{
+					UserId = userId.Value,
+					DepartmentKey = department,
+					DashboardKey = dashboardKey,
+					LayoutJson = layoutJson
+				},
+				cancellationToken: cancellationToken));
+
+		return Ok(new { published = true });
+	}
+
+
+	[HttpDelete("dashboard/{dashboardKey}/department-layout")]
+	public async Task<IActionResult> DeleteDepartmentLayout(
+		string dashboardKey,
+		[FromQuery] string department,
+		CancellationToken cancellationToken)
+	{
+		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+
+		if (!userId.HasValue)
+			return BadRequest(new { error = "Select a demo user first." });
+
+		var accessError = await CheckDepartmentAccessAsync(
+			department, cancellationToken);
+
+		if (accessError is not null)
+			return accessError;
+
+		if (!await HasDepartmentAdminAccessAsync(
+			userId.Value, department, cancellationToken))
+		{
+			return StatusCode(403, new
+			{
+				error = "Only department admins can remove department layouts."
+			});
+		}
+
+		if (string.IsNullOrWhiteSpace(dashboardKey))
+			return BadRequest(new { error = "Dashboard is required." });
+
+		await using var connection = await _db.OpenAsync();
+
+		const string sql = """
+        DELETE FROM dash.DepartmentDashboardLayout
+        WHERE DepartmentKey = @DepartmentKey
+          AND DashboardKey = @DashboardKey;
+        """;
+
+		await connection.ExecuteAsync(
+			new CommandDefinition(
+				sql,
+				new
+				{
+					DepartmentKey = department,
+					DashboardKey = dashboardKey
+				},
+				cancellationToken: cancellationToken));
+
+		return Ok(new { deleted = true });
 	}
 
 
