@@ -1,26 +1,34 @@
+function getDashboardTabId() {
+    let tabId = sessionStorage.getItem('dashboard-tab-id');
+
+    if (!tabId) {
+        tabId = crypto.randomUUID();
+        sessionStorage.setItem('dashboard-tab-id', tabId);
+    }
+
+    return tabId;
+}
+
 // dashboard-api.js
 // All HTTP and metadata-loading operations live here.
 
 export async function request(url, options = {}) {
     const response = await fetch(url, {
+        ...options,
         headers: {
             Accept: 'application/json',
+            'X-Dashboard-Tab': getDashboardTabId(),
             ...(options.headers || {})
-        },
-        ...options
+        }
     });
 
-    const body = await response.json().catch(() => null);
+    const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-        throw new Error(
-            body?.error ||
-            body?.message ||
-            `Request failed (${response.status}).`
-        );
+        throw new Error(data?.error || `Request failed (${response.status}).`);
     }
 
-    return body;
+    return data;
 }
 
 export async function loadUIConfiguration() {
@@ -57,7 +65,7 @@ export async function loadSelectedDepartment() {
 export async function saveDepartment(department) {
     const response = await fetch('/api/dash/department', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Dashboard-Tab': getDashboardTabId() },
         body: JSON.stringify({ department })
     });
 
