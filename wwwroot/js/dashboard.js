@@ -204,10 +204,6 @@ import { createWidgetBuilder } from './widget-builder.js';
 
         const isAdmin = String(role || '').toLowerCase() === 'admin';
 
-        $('publishDepartmentLayoutButton').classList.toggle(
-            'd-none', !isAdmin
-        );
-
         $('manageLayoutsButton').classList.toggle('d-none', !isAdmin);
     }
 
@@ -457,8 +453,26 @@ import { createWidgetBuilder } from './widget-builder.js';
         const presets = await loadDashboardPresets(getDepartment(), getDashboardKey());
         const host = $('presetList');
         host.replaceChildren();
+        if (isAdmin) {
+            const create = document.createElement('button');
+            create.type = 'button';
+            create.className = 'btn btn-primary align-self-start';
+            create.textContent = 'Save current dashboard as a preset';
+            create.addEventListener('click', () => {
+                $('editingPresetId').value = '';
+                $('presetNameInput').value = '';
+                $('presetDescriptionInput').value = '';
+                $('savePresetButton').classList.remove('d-none');
+                $('updatePresetButton').classList.add('d-none');
+                bootstrap.Modal.getOrCreateInstance($('presetEditorModal')).show();
+            });
+            host.append(create);
+        }
         if (!presets.length) {
-            host.textContent = 'No layouts have been created for this dashboard yet.';
+            const empty = document.createElement('div');
+            empty.className = 'text-secondary';
+            empty.textContent = 'No layouts have been created for this dashboard yet.';
+            host.append(empty);
             return;
         }
         presets.forEach(preset => {
@@ -500,7 +514,8 @@ import { createWidgetBuilder } from './widget-builder.js';
         $('editingPresetId').value = '';
         $('presetNameInput').value = '';
         $('presetDescriptionInput').value = '';
-        $('savePresetButton').textContent = 'Save as preset';
+        $('savePresetButton').classList.remove('d-none');
+        $('updatePresetButton').classList.add('d-none');
         clearError($('presetModalError'));
         try {
             await renderPresetList(true);
@@ -559,6 +574,7 @@ import { createWidgetBuilder } from './widget-builder.js';
                 $('presetDescriptionInput').value = '';
                 clearError($('presetModalError'));
                 await renderPresetList(true);
+                bootstrap.Modal.getOrCreateInstance($('presetEditorModal')).hide();
                 showNotice('Preset saved for this department.');
             } catch (error) {
                 showError(error.message, $('presetModalError'));
@@ -594,7 +610,8 @@ import { createWidgetBuilder } from './widget-builder.js';
                 $('editingPresetId').value = String(presetId);
                 $('presetNameInput').value = preset.presetName || preset.PresetName || '';
                 $('presetDescriptionInput').value = preset.description || preset.Description || '';
-                $('savePresetButton').textContent = 'Update preset from current layout';
+                $('savePresetButton').classList.add('d-none');
+                $('updatePresetButton').classList.remove('d-none');
                 bootstrap.Modal.getOrCreateInstance($('layoutLibraryModal')).hide();
                 bootstrap.Modal.getOrCreateInstance($('presetEditorModal')).show();
                 await builder.renderLocalDashboard();
@@ -617,7 +634,8 @@ import { createWidgetBuilder } from './widget-builder.js';
                     layout: widgets
                 });
                 $('editingPresetId').value = '';
-                $('savePresetButton').textContent = 'Save as preset';
+                $('savePresetButton').classList.remove('d-none');
+                $('updatePresetButton').classList.add('d-none');
                 bootstrap.Modal.getOrCreateInstance($('presetEditorModal')).hide();
                 await openLayoutManager();
                 showNotice('Preset updated.');
