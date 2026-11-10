@@ -468,7 +468,11 @@ import { createWidgetBuilder } from './widget-builder.js';
                     $('savePresetButton').classList.remove('d-none');
                     $('updatePresetButton').classList.add('d-none');
                 }
-                bootstrap.Modal.getOrCreateInstance($('presetEditorModal')).show();
+                const libraryElement = $('layoutLibraryModal');
+                libraryElement.addEventListener('hidden.bs.modal', () => {
+                    bootstrap.Modal.getOrCreateInstance($('presetEditorModal')).show();
+                }, { once: true });
+                bootstrap.Modal.getOrCreateInstance(libraryElement).hide();
             });
             host.append(create);
         }
