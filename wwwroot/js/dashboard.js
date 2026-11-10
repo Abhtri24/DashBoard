@@ -436,9 +436,19 @@ import { createWidgetBuilder } from './widget-builder.js';
         demoUserSelect.addEventListener('change', async () => {
             try {
                 await selectDemoUser(Number(demoUserSelect.value));
-
                 activeUserId = Number(demoUserSelect.value);
 
+                const departments = await loadDepartments();
+                if (!departments.length) {
+                    throw new Error('This user has no active department memberships.');
+                }
+
+                departmentSelect.replaceChildren(
+                    ...departments.map(item => new Option(item.label, item.key))
+                );
+
+                await saveDepartment(departments[0].key);
+                await refreshDashboardList();
                 await loadDashboard();
             } catch (error) {
                 showError(error.message);
@@ -489,9 +499,42 @@ import { createWidgetBuilder } from './widget-builder.js';
 
     async function initialize() {
         try {
+            const demoUsers = await loadDemoUsers();
+            if (!demoUsers.length) {
+                throw new Error('No active demo users with department memberships are configured.');
+            }
+
+            demoUserSelect.replaceChildren(
+                ...demoUsers.map(user => new Option(
+                    user.displayName || user.DisplayName,
+                    user.userId || user.UserId
+                ))
+            );
+
+            try {
+                const selected = await loadSelectedDemoUser();
+                activeUserId = Number(selected.userId || selected.UserId);
+            } catch {
+                activeUserId = Number(
+                    demoUsers[0].userId || demoUsers[0].UserId
+                );
+                await selectDemoUser(activeUserId);
+            }
+
+            if (!demoUsers.some(user =>
+                Number(user.userId || user.UserId) === activeUserId
+            )) {
+                activeUserId = Number(
+                    demoUsers[0].userId || demoUsers[0].UserId
+                );
+                await selectDemoUser(activeUserId);
+            }
+
+            demoUserSelect.value = String(activeUserId);
+
             const departments = await loadDepartments();
             if (!departments.length) {
-                throw new Error('No active departments are configured. Configure at least one row in dash.Department.');
+                throw new Error('This user has no active department memberships.');
             }
 
             departmentSelect.replaceChildren(
@@ -503,7 +546,7 @@ import { createWidgetBuilder } from './widget-builder.js';
                 const selected = await loadSelectedDepartment();
                 selectedDepartment = selected.department || selected.Department;
             } catch {
-                // A missing session selection is expected on a new browser session.
+                // Department selection is reset when the demo user changes.
             }
 
             if (!departments.some(item => item.key === selectedDepartment)) {
@@ -512,34 +555,6 @@ import { createWidgetBuilder } from './widget-builder.js';
             }
 
             departmentSelect.value = selectedDepartment;
-
-            const demoUsers = await loadDemoUsers();
-
-            demoUserSelect.replaceChildren(
-                ...demoUsers.map(user => new Option(
-                    user.displayName || user.DisplayName,
-                    user.userId || user.UserId
-                ))
-            );
-
-            try {
-                const selected = await loadSelectedDemoUser();
-                activeUserId = selected.userId || selected.UserId;
-            } catch {
-                if (!demoUsers.length) {
-                    throw new Error(
-                        'No active demo users are configured. Run the dashboard user/layout SQL script first.'
-                    );
-                }
-
-                activeUserId = Number(
-                    demoUsers[0].userId || demoUsers[0].UserId
-                );
-
-                await selectDemoUser(activeUserId);
-            }
-
-            demoUserSelect.value = String(activeUserId);
 
             uiConfiguration = await loadUIConfiguration();
             applyUILabels();
