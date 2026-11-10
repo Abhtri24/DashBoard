@@ -21,6 +21,10 @@ import {
     loadDepartmentLayout,
     publishDepartmentLayout,
     deleteDepartmentLayout,
+    loadDashboardPresets,
+    createDashboardPreset,
+    updateDashboardPreset,
+    deleteDashboardPreset,
     loadDrilldown
 } from './dashboard-api.js';
 
@@ -204,9 +208,7 @@ import { createWidgetBuilder } from './widget-builder.js';
             'd-none', !isAdmin
         );
 
-        $('removeDepartmentLayoutButton').classList.toggle(
-            'd-none', !isAdmin
-        );
+        $('manageLayoutsButton').classList.toggle('d-none', !isAdmin);
     }
 
     const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -445,6 +447,75 @@ import { createWidgetBuilder } from './widget-builder.js';
         dashboardSelect.selectedIndex = 0;
     }
 
+
+    function showNotice(message) {
+        notice.textContent = message;
+        notice.classList.remove('d-none');
+    }
+
+    async function renderPresetList(isAdmin) {
+        const presets = await loadDashboardPresets(getDepartment(), getDashboardKey());
+        const host = $('presetList');
+        host.replaceChildren();
+        if (!presets.length) {
+            host.textContent = 'No layouts have been created for this dashboard yet.';
+            return;
+        }
+        presets.forEach(preset => {
+            const id = preset.presetId || preset.PresetId;
+            const name = preset.presetName || preset.PresetName;
+            const description = preset.description || preset.Description || '';
+            const item = document.createElement('div');
+            item.className = 'border rounded p-3 d-flex flex-wrap justify-content-between align-items-center gap-2';
+            const details = document.createElement('div');
+            const title = document.createElement('strong');
+            title.textContent = name;
+            const subtitle = document.createElement('div');
+            subtitle.className = 'small text-secondary';
+            subtitle.textContent = description;
+            details.append(title, subtitle);
+            const actions = document.createElement('div');
+            actions.className = 'd-flex flex-wrap gap-2';
+            const addAction = (action, label, css) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = css;
+                button.textContent = label;
+                button.dataset.action = action;
+                button.dataset.id = id;
+                actions.append(button);
+            };
+            addAction('apply', 'Apply to my dashboard', 'btn btn-sm btn-primary');
+            if (isAdmin) {
+                addAction('default', 'Set as department default', 'btn btn-sm btn-outline-primary');
+                addAction('edit', 'Edit', 'btn btn-sm btn-outline-secondary');
+                addAction('delete', 'Delete', 'btn btn-sm btn-outline-danger');
+            }
+            item.append(details, actions);
+            host.append(item);
+        });
+    }
+
+    async function openLayoutManager() {
+        $('editingPresetId').value = '';
+        $('presetNameInput').value = '';
+        $('presetDescriptionInput').value = '';
+        $('savePresetButton').textContent = 'Save as preset';
+        clearError($('presetModalError'));
+        try {
+            await renderPresetList(true);
+            bootstrap.Modal.getOrCreateInstance($('layoutLibraryModal')).show();
+        } catch (error) { showError(error.message); }
+    }
+
+    async function openLayoutLibrary() {
+        clearError($('presetListError'));
+        try {
+            await renderPresetList(false);
+            bootstrap.Modal.getOrCreateInstance($('layoutLibraryModal')).show();
+        } catch (error) { showError(error.message); }
+    }
+
     function bindPageEvents() {
         builder.bindEvents();
 
@@ -466,52 +537,92 @@ import { createWidgetBuilder } from './widget-builder.js';
             }
         });
 
-        $('publishDepartmentLayoutButton').addEventListener(
-            'click',
-            async () => {
-                try {
-                    await publishDepartmentLayout(
-                        getDepartment(),
-                        getDashboardKey(),
-                        widgets
-                    );
 
-                    notice.textContent =
-                        'Layout published for the entire department.';
+        $('manageLayoutsButton').addEventListener('click', openLayoutManager);
 
-                    notice.classList.remove('d-none');
-                } catch (error) {
-                    showError(error.message);
-                }
+        $('openLayoutLibraryButton').addEventListener('click', openLayoutLibrary);
+
+        $('savePresetButton').addEventListener('click', async () => {
+            const name = $('presetNameInput').value.trim();
+            const description = $('presetDescriptionInput').value.trim();
+            if (!name) {
+                showError('Enter a name for this preset.', $('presetModalError'));
+                return;
             }
-        );
+            try {
+                await createDashboardPreset(getDepartment(), getDashboardKey(), {
+                    presetName: name,
+                    description,
+                    layout: widgets
+                });
+                $('presetNameInput').value = '';
+                $('presetDescriptionInput').value = '';
+                clearError($('presetModalError'));
+                await renderPresetList(true);
+                showNotice('Preset saved for this department.');
+            } catch (error) {
+                showError(error.message, $('presetModalError'));
+            }
+        });
 
-        $('removeDepartmentLayoutButton').addEventListener(
-            'click',
-            async () => {
-                const confirmed = confirm(
-                    'Remove the published department layout? Users without a personal layout will return to the configured dashboard.'
-                );
-
-                if (!confirmed) return;
-
+        $('presetList').addEventListener('click', async event => {
+            const button = event.target.closest('button[data-action]');
+            if (!button) return;
+            const presetId = Number(button.dataset.id);
+            const preset = (await loadDashboardPresets(getDepartment(), getDashboardKey()))
+                .find(item => Number(item.presetId || item.PresetId) === presetId);
+            if (!preset) return;
+            const presetJson = preset.layoutJson || preset.LayoutJson;
+            if (button.dataset.action === 'apply') {
                 try {
-                    await deleteDepartmentLayout(
-                        getDepartment(),
-                        getDashboardKey()
-                    );
-
+                    const selectedWidgets = JSON.parse(presetJson);
+                    await saveUserLayout(getDepartment(), getDashboardKey(), selectedWidgets);
+                    sessionStorage.removeItem(storageKey('draft'));
+                    setLayoutButtons(false);
                     await loadDashboard();
-
-                    notice.textContent =
-                        'Department layout removed.';
-
-                    notice.classList.remove('d-none');
-                } catch (error) {
-                    showError(error.message);
-                }
+                    showNotice('Preset applied to your personal dashboard.');
+                    bootstrap.Modal.getOrCreateInstance($('layoutLibraryModal')).hide();
+                } catch (error) { showError(error.message, $('presetListError')); }
+            } else if (button.dataset.action === 'default') {
+                try {
+                    await publishDepartmentLayout(getDepartment(), getDashboardKey(), JSON.parse(presetJson));
+                    showNotice('This preset is now the department default.');
+                    await renderPresetList(true);
+                } catch (error) { showError(error.message, $('presetListError')); }
+            } else if (button.dataset.action === 'edit') {
+                widgets = JSON.parse(presetJson);
+                $('editingPresetId').value = String(presetId);
+                $('presetNameInput').value = preset.presetName || preset.PresetName || '';
+                $('presetDescriptionInput').value = preset.description || preset.Description || '';
+                $('savePresetButton').textContent = 'Update preset from current layout';
+                bootstrap.Modal.getOrCreateInstance($('layoutLibraryModal')).hide();
+                bootstrap.Modal.getOrCreateInstance($('presetEditorModal')).show();
+                await builder.renderLocalDashboard();
+            } else if (button.dataset.action === 'delete') {
+                if (!confirm('Delete this preset? Users who already applied it keep their personal layouts.')) return;
+                try {
+                    await deleteDashboardPreset(getDepartment(), getDashboardKey(), presetId);
+                    await renderPresetList(true);
+                    showNotice('Preset deleted.');
+                } catch (error) { showError(error.message, $('presetListError')); }
             }
-        );
+        });
+
+        $('updatePresetButton').addEventListener('click', async () => {
+            const presetId = Number($('editingPresetId').value);
+            try {
+                await updateDashboardPreset(getDepartment(), getDashboardKey(), presetId, {
+                    presetName: $('presetNameInput').value.trim(),
+                    description: $('presetDescriptionInput').value.trim(),
+                    layout: widgets
+                });
+                $('editingPresetId').value = '';
+                $('savePresetButton').textContent = 'Save as preset';
+                bootstrap.Modal.getOrCreateInstance($('presetEditorModal')).hide();
+                await openLayoutManager();
+                showNotice('Preset updated.');
+            } catch (error) { showError(error.message, $('presetModalError')); }
+        });
 
         $('discardLayoutButton').addEventListener('click', async () => {
             sessionStorage.removeItem(storageKey('draft'));
