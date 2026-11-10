@@ -48,6 +48,35 @@ export async function loadUIConfiguration() {
     }
 }
 
+export async function exportWidgetPdf(exportId) {
+    const response = await fetch(
+        `/api/dash/widget-export/${encodeURIComponent(exportId)}`,
+        {
+            headers: {
+                Accept: 'application/pdf',
+                'X-Dashboard-Tab': getDashboardTabId()
+            }
+        }
+    );
+
+    if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || 'Could not generate PDF.');
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'dashboard-table.pdf';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    URL.revokeObjectURL(url);
+}
+
 export async function loadDepartments() {
     const result = await request('/api/dash/departments');
     return (Array.isArray(result) ? result : [])
@@ -141,9 +170,9 @@ export async function executeQuery(department, payload) {
     );
 }
 
-export async function loadWidget(department, dashboardKey, widgetKey) {
+export async function loadWidget(department, dashboardKey, widgetKey, title) {
     return request(
-        `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/widget/${encodeURIComponent(widgetKey)}?department=${encodeURIComponent(department)}&page=1&pageSize=100`,
+        `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/widget/${encodeURIComponent(widgetKey)}?department=${encodeURIComponent(department)}&page=1&pageSize=100&title=${encodeURIComponent(title || widgetKey)}`,
         { method: 'POST' }
     );
 }

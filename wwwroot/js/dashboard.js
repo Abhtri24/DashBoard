@@ -28,7 +28,7 @@ import {
     loadDrilldown
 } from './dashboard-api.js';
 
-import { createRenderer } from './dashboard-renderer.js';
+import { createRenderer,exportWidgetPdf } from './dashboard-renderer.js';
 import { createWidgetBuilder } from './widget-builder.js';
 
 (() => {
@@ -256,7 +256,7 @@ import { createWidgetBuilder } from './widget-builder.js';
         setLayoutButtons(true);
     }
 
-    async function getCachedWidget(department, dashboardKey, widgetKey) {
+    async function getCachedWidget(department, dashboardKey, widgetKey,title) {
         const key = storageKey('data');
 
         let cache = {};
@@ -277,7 +277,8 @@ import { createWidgetBuilder } from './widget-builder.js';
         const data = await loadWidget(
             department,
             dashboardKey,
-            widgetKey
+            widgetKey,
+            title
         );
 
         cache[cacheKey] = {
@@ -357,6 +358,7 @@ import { createWidgetBuilder } from './widget-builder.js';
     const renderer = createRenderer({
         widgetsHost,
         getWidgets,
+        exportWidgetPdf,
         getDepartment,
         getDashboardKey,
         getEditMode: () => editMode,

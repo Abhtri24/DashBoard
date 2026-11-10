@@ -5,7 +5,7 @@ export function createRenderer(ctx) {
     const {
         widgetsHost, getWidgets, getDepartment, getDashboardKey,
         getEditMode, requestWidget, openWidgetModal, deleteWidget,
-        getUIConfiguration, renderAfterReorder, onDrilldown
+        getUIConfiguration, renderAfterReorder, onDrilldown,exportWidgetPdf
     } = ctx;
 
     let chartInstances = [];
@@ -77,20 +77,55 @@ export function createRenderer(ctx) {
         menuButton.setAttribute('aria-label', 'Widget actions');
         menuButton.textContent = '⋯';
 
-        const menu = el('ul', 'dropdown-menu dropdown-menu-end');
-        const edit = el('button', 'dropdown-item', 'Edit');
-        edit.type = 'button';
-        edit.addEventListener('click', () => openWidgetModal(widget));
+       
+const menu = el('ul', 'dropdown-menu dropdown-menu-end');
 
-        const remove = el('button', 'dropdown-item text-danger', 'Delete');
-        remove.type = 'button';
-        remove.addEventListener('click', () => deleteWidget(index));
+const edit = el('button', 'dropdown-item', 'Edit');
+edit.type = 'button';
+edit.addEventListener('click', () => openWidgetModal(widget));
 
-        const editLi = el('li');
-        const deleteLi = el('li');
-        editLi.append(edit);
-        deleteLi.append(remove);
-        menu.append(editLi, deleteLi);
+const editLi = el('li');
+editLi.append(edit);
+menu.append(editLi);
+
+let exportId = null;
+
+if (String(getProp(widget, 'widgetType', 'WidgetType')).toUpperCase() === 'TABLE') {
+    const exportPdf = el('button', 'dropdown-item', 'Export to PDF');
+    exportPdf.type = 'button';
+
+    exportPdf.addEventListener('click', async () => {
+        if (!exportId) {
+            alert('Export data is not available. Refresh the dashboard and try again.');
+            return;
+        }
+
+        exportPdf.disabled = true;
+        exportPdf.textContent = 'Generating PDF...';
+
+        try {
+            await exportWidgetPdf(exportId);
+        } catch (error) {
+            alert(error.message);
+        } finally {
+            exportPdf.disabled = false;
+            exportPdf.textContent = 'Export to PDF';
+        }
+    });
+
+    const exportLi = el('li');
+    exportLi.append(exportPdf);
+    menu.append(exportLi);
+}
+
+const remove = el('button', 'dropdown-item text-danger', 'Delete');
+remove.type = 'button';
+remove.addEventListener('click', () => deleteWidget(index));
+
+const deleteLi = el('li');
+deleteLi.append(remove);
+menu.append(deleteLi);
+
         actions.append(menuButton, menu);
 
         header.append(title, actions);
@@ -98,7 +133,7 @@ export function createRenderer(ctx) {
         card.append(body);
         section.append(card);
 
-        return { section, body };
+        return { section, body , setExportId: (id) => { exportId = id; } };
     }
 
     function renderKpi(body, widget, rows) {
@@ -351,15 +386,18 @@ export function createRenderer(ctx) {
     }
 
     async function renderOne(widget, index) {
-        const { section, body } = makeWidgetShell(widget, index);
+        const { section, body,setExportId  } = makeWidgetShell(widget, index);
         widgetsHost.append(section);
 
         try {
             const result = await requestWidget(
                 getDepartment(),
                 getDashboardKey(),
-                getProp(widget, 'widgetKey', 'WidgetKey')
+                getProp(widget, 'widgetKey', 'WidgetKey'),
+ getProp(widget, 'title', 'Title')
+
             );
+setExportId(result?.exportId || result?.ExportId || null);
             renderRows(body, widget, result);
         } catch (error) {
             body.append(el('div', 'alert alert-danger small mb-0', error.message));

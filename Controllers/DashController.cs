@@ -6,6 +6,7 @@ using DashBoard.Models;
 using DashBoard.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Memory;
 
 [ApiController]
 [Route("api/dash")]
@@ -38,6 +39,10 @@ public class DashController : ControllerBase
 
 	private readonly UIConfigurationService _uiConfigurationService;
 
+	private readonly IMemoryCache _cache;
+
+	private readonly PdfExportService _pdfExportService;
+
 	public DashController(
 		SqlConnectionFactory db,
 		CatalogService catalog,
@@ -54,7 +59,9 @@ public class DashController : ControllerBase
 		DashboardConfigurationService dashboardConfigurationService,
 		DashboardWidgetQueryService widgetQueryService,
 		QueryBuilderService queryBuilderService,
-		UIConfigurationService uiConfigurationService
+		UIConfigurationService uiConfigurationService,
+		IMemoryCache cache,
+		PdfExportService pdfExportService
 
 		)
 	{
@@ -74,8 +81,17 @@ public class DashController : ControllerBase
 		_widgetQueryService = widgetQueryService;
 		_queryBuilderService = queryBuilderService;
 		_uiConfigurationService = uiConfigurationService;
+		_cache = cache;
+		_pdfExportService = pdfExportService;
 	}
 
+	private sealed record CachedWidgetExport(
+	int UserId,
+	string Department,
+	Guid TabId,
+	string Title,
+	List<string> Columns,
+	List<Dictionary<string, object?>> Rows);
 
 	[HttpGet("ui-configuration")]
 	public async Task<IActionResult> GetUIConfiguration(
@@ -910,8 +926,9 @@ public class DashController : ControllerBase
 		string dashboardKey,
 		string widgetKey,
 		[FromQuery] string department,
+		[FromQuery] string? title = null,
 		[FromQuery] int page = 1,
-		[FromQuery] int pageSize = 100,
+		[FromQuery] int pageSize = 100,	
 		CancellationToken cancellationToken = default)
 	{
 		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
@@ -926,8 +943,99 @@ public class DashController : ControllerBase
 			pageSize,
 			cancellationToken);
 
-		return Ok(result);
+
+		var rows = result.Select(row =>
+		{
+			var values = (IDictionary<string, object>)row;
+
+			return values.ToDictionary(
+				item => item.Key,
+				item => (object?)item.Value,
+				StringComparer.OrdinalIgnoreCase);
+		}).ToList();
+
+
+		var userId = GetActiveDemoUserId();
+
+		if(!userId.HasValue)
+			return BadRequest(new { error = "Select a demo user first." });
+
+		if (!Guid.TryParse(Request.Headers[DashboardTabHeader].ToString(), out var tabId))
+		{ 
+			return BadRequest(new { error = "Invalid dashboard tab." });
+		}
+
+		var exportId = Guid.NewGuid();
+		var columns = rows.FirstOrDefault()?.Keys.ToList() ?? new List<string>();
+
+		var cachedExport = new CachedWidgetExport(
+			userId.Value,
+			department,
+			tabId,
+				string.IsNullOrWhiteSpace(title) ? widgetKey : title,
+
+			columns,
+			rows);	
+
+		_cache.Set(
+			$"widget-export:{exportId:N}",
+			cachedExport,
+			TimeSpan.FromMinutes(15));
+
+
+
+		return Ok(new { 
+		rows,exportId});
 	}
+
+
+	[HttpGet("widget-export/{exportId:guid}")]
+	public IActionResult ExportWidgetPdf(Guid exportId)
+	{
+		var userId = GetActiveDemoUserId();
+
+		if (!userId.HasValue)
+			return BadRequest(new { error = "Select a demo user first." });
+
+		if (!Guid.TryParse(
+			Request.Headers[DashboardTabHeader].ToString(),
+			out var tabId))
+		{
+			return BadRequest(new { error = "Invalid dashboard tab." });
+		}
+
+		if (!_cache.TryGetValue(
+			$"widget-export:{exportId:N}",
+			out CachedWidgetExport? cached) || cached is null)
+		{
+			return NotFound(new
+			{
+				error = "This export has expired. Refresh the dashboard and try again."
+			});
+		}
+
+		// A cached result can only be exported by the same user,
+		// department and browser tab that originally loaded it.
+		if (cached.UserId != userId.Value ||
+			cached.TabId != tabId ||
+			!string.Equals(
+				cached.Department,
+				GetActiveDepartment(),
+				StringComparison.OrdinalIgnoreCase))
+		{
+			return Forbid();
+		}
+
+		var pdf = _pdfExportService.GeneratePdf(
+	cached.Title,
+	cached.Columns,
+	cached.Rows);
+
+		var fileName = $"dashboard-{exportId:N}.pdf";
+
+		return File(pdf, "application/pdf", fileName);
+	}
+
 
 
 	[HttpGet("relationships")]

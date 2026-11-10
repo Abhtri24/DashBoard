@@ -4,7 +4,7 @@ using DashBoard.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// Adding services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddControllers();
 builder.Services.AddSingleton<SqlConnectionFactory>();
@@ -23,16 +23,19 @@ builder.Services.AddScoped<DashboardConfigurationService>();
 builder.Services.AddScoped<QueryBuilderService>();
 builder.Services.AddScoped<DashboardWidgetQueryService>();
 builder.Services.AddScoped<DashboardQueryService>();
+builder.Services.AddScoped<PdfExportService>();
 builder.Services.AddScoped<UIConfigurationService>();
 
 
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
-	options.IdleTimeout = TimeSpan.FromHours(5);
+	options.IdleTimeout = TimeSpan.FromHours(1);
 	options.Cookie.HttpOnly = true;
 	options.Cookie.IsEssential = true;
 });
+
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 var app = builder.Build();
 
