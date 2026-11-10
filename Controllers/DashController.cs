@@ -859,6 +859,7 @@ public class DashController : ControllerBase
 	[HttpPost("query-builder/execute")]
 	public async Task<IActionResult> ExecuteQueryBuilder(
 		[FromQuery] string department,
+		[FromQuery] string? title,
 		[FromBody] JsonElement request,
 		CancellationToken cancellationToken)
 	{
@@ -868,8 +869,50 @@ public class DashController : ControllerBase
 
 		try
 		{
-			return Ok(await _queryBuilderService.ExecuteAsync(
-				department, request, cancellationToken));
+			var result = await _queryBuilderService.ExecuteAsync(
+				department, request, cancellationToken);
+
+			var rows = result.Select(row =>
+			{
+				var values = (IDictionary<string, object>)row;
+
+				return values.ToDictionary(
+					item => item.Key,
+					item => (object?)item.Value,
+					StringComparer.OrdinalIgnoreCase);
+			}).ToList();
+
+			var userId = GetActiveDemoUserId();
+
+			if (!userId.HasValue)
+				return BadRequest(new { error = "Select a demo user first." });
+
+			if (!Guid.TryParse(
+				Request.Headers[DashboardTabHeader].ToString(),
+				out var tabId))
+			{
+				return BadRequest(new { error = "Invalid dashboard tab." });
+			}
+
+			var exportId = Guid.NewGuid();
+
+			var columns = rows.FirstOrDefault()?.Keys.ToList()
+				?? new List<string>();
+
+			var cachedExport = new CachedWidgetExport(
+				userId.Value,
+				department,
+				tabId,
+				string.IsNullOrWhiteSpace(title) ? "Dashboard Table" : title.Trim(),
+				columns,
+				rows);
+
+			_cache.Set(
+				$"widget-export:{exportId:N}",
+				cachedExport,
+				TimeSpan.FromMinutes(15));
+
+			return Ok(new { rows, exportId });
 		}
 		catch (UnauthorizedAccessException ex)
 		{

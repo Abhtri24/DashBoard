@@ -160,9 +160,9 @@ export async function loadMetadata(department, dataset) {
     };
 }
 
-export async function executeQuery(department, payload) {
+export async function executeQuery(department, payload, title = '') {
     return request(
-        `/api/dash/query-builder/execute?department=${encodeURIComponent(department)}`,
+        `/api/dash/query-builder/execute?department=${encodeURIComponent(department)}&title=${encodeURIComponent(title)}`,
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -170,7 +170,6 @@ export async function executeQuery(department, payload) {
         }
     );
 }
-
 export async function loadWidget(department, dashboardKey, widgetKey, title) {
     return request(
         `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/widget/${encodeURIComponent(widgetKey)}?department=${encodeURIComponent(department)}&page=1&pageSize=100&title=${encodeURIComponent(title || widgetKey)}`,

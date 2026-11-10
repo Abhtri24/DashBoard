@@ -462,8 +462,8 @@ export function createWidgetBuilder(ctx) {
                 continue;
             }
 
-            const { section, body } = renderer.makeWidgetShell(widget, index);
-            host.append(section);
+const { section, body, setExportId } =
+    renderer.makeWidgetShell(widget, index);            host.append(section);
 
             const payload = {
                 dataset: getProp(widget, 'datasetKey', 'DatasetKey'),
@@ -488,8 +488,15 @@ export function createWidgetBuilder(ctx) {
             };
 
             try {
-                const result = await executeQuery(getDepartment(), payload);
-                renderer.renderRows(body, widget, result);
+ const result = await executeQuery(
+    getDepartment(),
+    payload,
+    getProp(widget, 'title', 'Title')
+);
+
+setExportId(result?.exportId || result?.ExportId || null);
+
+renderer.renderRows(body, widget, result);
             } catch (error) {
                 const alert = document.createElement('div');
                 alert.className = 'alert alert-danger small';

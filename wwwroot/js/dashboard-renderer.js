@@ -54,6 +54,9 @@ export function createRenderer(ctx) {
     }
 
     function makeWidgetShell(widget, index) {
+
+console.log('Creating widget shell:', index,
+    getProp(widget, 'widgetKey', 'WidgetKey'));
         const section = el('section', 'dashboard-widget');
         setGridSpan(section, widget);
         section.dataset.index = index;
@@ -88,14 +91,19 @@ const editLi = el('li');
 editLi.append(edit);
 menu.append(editLi);
 
-let exportId = null;
+const exportState = { id: null };
 
 if (String(getProp(widget, 'widgetType', 'WidgetType')).toUpperCase() === 'TABLE') {
     const exportPdf = el('button', 'dropdown-item', 'Export to PDF');
     exportPdf.type = 'button';
 
     exportPdf.addEventListener('click', async () => {
-        if (!exportId) {
+       console.log('Export clicked:', {
+    title: getProp(widget, 'title', 'Title'),
+    type: getProp(widget, 'widgetType', 'WidgetType'),
+    exportId: exportState.id
+});
+        if (!exportState.id) {
             alert('Export data is not available. Refresh the dashboard and try again.');
             return;
         }
@@ -104,7 +112,7 @@ if (String(getProp(widget, 'widgetType', 'WidgetType')).toUpperCase() === 'TABLE
         exportPdf.textContent = 'Generating PDF...';
 
         try {
-            await exportWidgetPdf(exportId);
+            await exportWidgetPdf(exportState.id);
         } catch (error) {
             alert(error.message);
         } finally {
@@ -133,7 +141,13 @@ menu.append(deleteLi);
         card.append(body);
         section.append(card);
 
-        return { section, body , setExportId: (id) => { exportId = id; } };
+       return {
+    section,
+    body,
+    setExportId: id => {
+ console.log('Assigning ID to widget:', index, id);
+        exportState.id = id;
+    } };
     }
 
     function renderKpi(body, widget, rows) {
@@ -389,6 +403,13 @@ menu.append(deleteLi);
         const { section, body,setExportId  } = makeWidgetShell(widget, index);
         widgetsHost.append(section);
 
+
+console.log('Requesting widget:', {
+    index,
+    title: getProp(widget, 'title', 'Title'),
+    type: getProp(widget, 'widgetType', 'WidgetType'),
+    key: getProp(widget, 'widgetKey', 'WidgetKey')
+});
         try {
             const result = await requestWidget(
                 getDepartment(),
@@ -398,15 +419,32 @@ menu.append(deleteLi);
  getProp(widget, 'widgetType', 'WidgetType')
 
             );
+console.log('Loaded widget:', {
+    index,
+    title: getProp(widget, 'title', 'Title'),
+    type: getProp(widget, 'widgetType', 'WidgetType'),
+    result
+});
 
 console.log('Widget response:', result);
 console.log('Export ID:', result?.exportId || result?.ExportId);
+console.log('Assigning export ID:', {
+    title: getProp(widget, 'title', 'Title'),
+    type: getProp(widget, 'widgetType', 'WidgetType'),
+    id: result?.exportId || result?.ExportId
+});
 
 setExportId(result?.exportId || result?.ExportId || null);
             renderRows(body, widget, result);
-        } catch (error) {
-            body.append(el('div', 'alert alert-danger small mb-0', error.message));
-        }
+        }  catch (error) {
+    console.error('Widget loading failed:', {
+        title: getProp(widget, 'title', 'Title'),
+        type: getProp(widget, 'widgetType', 'WidgetType'),
+        error
+    });
+
+    body.append(el('div', 'alert alert-danger small mb-0', error.message));
+}
     }
 
     async function renderDashboard() {
