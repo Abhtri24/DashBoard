@@ -45,7 +45,8 @@ export async function loadDepartments() {
     return (Array.isArray(result) ? result : [])
         .map(item => ({
             key: item.key || item.Key,
-            label: item.label || item.Label || item.key || item.Key
+            label: item.label || item.Label || item.key || item.Key,
+            role: item.role || item.Role || 'User'
         }));
 }
 
