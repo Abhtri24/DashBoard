@@ -394,9 +394,14 @@ menu.append(deleteLi);
                 getDepartment(),
                 getDashboardKey(),
                 getProp(widget, 'widgetKey', 'WidgetKey'),
- getProp(widget, 'title', 'Title')
+ getProp(widget, 'title', 'Title'),
+ getProp(widget, 'widgetType', 'WidgetType')
 
             );
+
+console.log('Widget response:', result);
+console.log('Export ID:', result?.exportId || result?.ExportId);
+
 setExportId(result?.exportId || result?.ExportId || null);
             renderRows(body, widget, result);
         } catch (error) {

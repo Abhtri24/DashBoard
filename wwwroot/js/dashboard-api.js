@@ -49,6 +49,7 @@ export async function loadUIConfiguration() {
 }
 
 export async function exportWidgetPdf(exportId) {
+console.log('PDF export called with ID:', exportId);
     const response = await fetch(
         `/api/dash/widget-export/${encodeURIComponent(exportId)}`,
         {

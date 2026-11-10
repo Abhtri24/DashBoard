@@ -25,10 +25,11 @@ import {
     createDashboardPreset,
     updateDashboardPreset,
     deleteDashboardPreset,
-    loadDrilldown
+    loadDrilldown,
+    exportWidgetPdf
 } from './dashboard-api.js';
 
-import { createRenderer,exportWidgetPdf } from './dashboard-renderer.js';
+import { createRenderer, } from './dashboard-renderer.js';
 import { createWidgetBuilder } from './widget-builder.js';
 
 (() => {
@@ -256,10 +257,16 @@ import { createWidgetBuilder } from './widget-builder.js';
         setLayoutButtons(true);
     }
 
-    async function getCachedWidget(department, dashboardKey, widgetKey,title) {
+    async function getCachedWidget(department, dashboardKey, widgetKey,title,widgetType) {
+
+        if (String(widgetType).toUpperCase() === 'TABLE') {
+        return loadWidget(department, dashboardKey, widgetKey, title);
+    }
         const key = storageKey('data');
 
         let cache = {};
+
+
 
         try {
             cache = JSON.parse(sessionStorage.getItem(key) || '{}');
@@ -362,7 +369,8 @@ import { createWidgetBuilder } from './widget-builder.js';
         getDepartment,
         getDashboardKey,
         getEditMode: () => editMode,
-        requestWidget: getCachedWidget,
+       requestWidget: (department, dashboardKey, widgetKey, title, widgetType) =>
+    getCachedWidget(department, dashboardKey, widgetKey, title, widgetType),
         openWidgetModal: widget => builder.openWidgetModal(widget),
         deleteWidget: index => builder.deleteWidget(index),
         getUIConfiguration: () => uiConfiguration,
