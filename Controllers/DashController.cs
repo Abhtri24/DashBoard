@@ -547,6 +547,173 @@ public class DashController : ControllerBase
 	}
 
 
+
+	[HttpGet("dashboard/{dashboardKey}/presets")]
+	public async Task<IActionResult> GetDashboardPresets(
+		string dashboardKey,
+		[FromQuery] string department,
+		CancellationToken cancellationToken)
+	{
+		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
+		if (accessError is not null) return accessError;
+		if (string.IsNullOrWhiteSpace(dashboardKey))
+			return BadRequest(new { error = "Dashboard is required." });
+
+		await using var connection = await _db.OpenAsync();
+		const string sql = """
+			SELECT PresetId, PresetName, Description, LayoutJson, CreatedAt, UpdatedAt
+			FROM dash.DashboardLayoutPreset
+			WHERE DepartmentKey = @DepartmentKey
+			  AND DashboardKey = @DashboardKey
+			  AND IsActive = 1
+			ORDER BY PresetName;
+			""";
+		var presets = await connection.QueryAsync(new CommandDefinition(
+			sql, new { DepartmentKey = department, DashboardKey = dashboardKey },
+			cancellationToken: cancellationToken));
+		return Ok(presets);
+	}
+
+	[HttpPost("dashboard/{dashboardKey}/presets")]
+	public async Task<IActionResult> CreateDashboardPreset(
+		string dashboardKey,
+		[FromQuery] string department,
+		[FromBody] DashboardPresetRequest request,
+		CancellationToken cancellationToken)
+	{
+		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		if (!userId.HasValue) return BadRequest(new { error = "Select a demo user first." });
+		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
+		if (accessError is not null) return accessError;
+		if (!await HasDepartmentAdminAccessAsync(userId.Value, department, cancellationToken))
+			return StatusCode(403, new { error = "Only department admins can manage layout presets." });
+		if (string.IsNullOrWhiteSpace(dashboardKey) ||
+			string.IsNullOrWhiteSpace(request.PresetName) ||
+			request.PresetName.Trim().Length > 100)
+			return BadRequest(new { error = "A preset name of up to 100 characters is required." });
+		if (request.Layout.ValueKind != JsonValueKind.Array)
+			return BadRequest(new { error = "Layout must be a JSON array of widgets." });
+		var layoutJson = request.Layout.GetRawText();
+		if (layoutJson.Length > 1_000_000)
+			return BadRequest(new { error = "Layout is too large (maximum 1 MB)." });
+
+		await using var connection = await _db.OpenAsync();
+		const string dashboardSql = """
+			SELECT COUNT(1) FROM dash.Dashboard
+			WHERE DashboardKey = @DashboardKey AND DepartmentKey = @DepartmentKey AND IsActive = 1;
+			""";
+		if (await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+			dashboardSql, new { DashboardKey = dashboardKey, DepartmentKey = department },
+			cancellationToken: cancellationToken)) == 0)
+			return NotFound(new { error = "Dashboard not found for this department." });
+
+		const string sql = """
+			INSERT INTO dash.DashboardLayoutPreset
+				(DepartmentKey, DashboardKey, PresetName, Description, LayoutJson, CreatedByUserId)
+			OUTPUT INSERTED.PresetId
+			VALUES
+				(@DepartmentKey, @DashboardKey, @PresetName, @Description, @LayoutJson, @UserId);
+			""";
+		try
+		{
+			var id = await connection.ExecuteScalarAsync<int>(new CommandDefinition(sql, new
+			{
+				DepartmentKey = department,
+				DashboardKey = dashboardKey,
+				PresetName = request.PresetName.Trim(),
+				Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+				LayoutJson = layoutJson,
+				UserId = userId.Value
+			}, cancellationToken: cancellationToken));
+			return Ok(new { presetId = id, saved = true });
+		}
+		catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number is 2601 or 2627)
+		{
+			return Conflict(new { error = "A preset with that name already exists for this dashboard." });
+		}
+	}
+
+	[HttpPut("dashboard/{dashboardKey}/presets/{presetId:int}")]
+	public async Task<IActionResult> UpdateDashboardPreset(
+		string dashboardKey,
+		int presetId,
+		[FromQuery] string department,
+		[FromBody] DashboardPresetRequest request,
+		CancellationToken cancellationToken)
+	{
+		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		if (!userId.HasValue) return BadRequest(new { error = "Select a demo user first." });
+		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
+		if (accessError is not null) return accessError;
+		if (!await HasDepartmentAdminAccessAsync(userId.Value, department, cancellationToken))
+			return StatusCode(403, new { error = "Only department admins can manage layout presets." });
+		if (string.IsNullOrWhiteSpace(request.PresetName) || request.PresetName.Trim().Length > 100)
+			return BadRequest(new { error = "A preset name of up to 100 characters is required." });
+		if (request.Layout.ValueKind != JsonValueKind.Array)
+			return BadRequest(new { error = "Layout must be a JSON array of widgets." });
+		var layoutJson = request.Layout.GetRawText();
+		if (layoutJson.Length > 1_000_000)
+			return BadRequest(new { error = "Layout is too large (maximum 1 MB)." });
+
+		await using var connection = await _db.OpenAsync();
+		const string sql = """
+			UPDATE dash.DashboardLayoutPreset
+			SET PresetName = @PresetName, Description = @Description,
+				LayoutJson = @LayoutJson, UpdatedAt = SYSUTCDATETIME()
+			WHERE PresetId = @PresetId AND DepartmentKey = @DepartmentKey
+			  AND DashboardKey = @DashboardKey AND IsActive = 1;
+			""";
+		try
+		{
+			var changed = await connection.ExecuteAsync(new CommandDefinition(sql, new
+			{
+				PresetId = presetId, DepartmentKey = department, DashboardKey = dashboardKey,
+				PresetName = request.PresetName.Trim(),
+				Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+				LayoutJson = layoutJson
+			}, cancellationToken: cancellationToken));
+			return changed == 0 ? NotFound(new { error = "Preset not found." }) : Ok(new { saved = true });
+		}
+		catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number is 2601 or 2627)
+		{
+			return Conflict(new { error = "A preset with that name already exists for this dashboard." });
+		}
+	}
+
+	[HttpDelete("dashboard/{dashboardKey}/presets/{presetId:int}")]
+	public async Task<IActionResult> DeleteDashboardPreset(
+		string dashboardKey,
+		int presetId,
+		[FromQuery] string department,
+		CancellationToken cancellationToken)
+	{
+		var userId = HttpContext.Session.GetInt32(DemoUserSessionKey);
+		if (!userId.HasValue) return BadRequest(new { error = "Select a demo user first." });
+		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
+		if (accessError is not null) return accessError;
+		if (!await HasDepartmentAdminAccessAsync(userId.Value, department, cancellationToken))
+			return StatusCode(403, new { error = "Only department admins can manage layout presets." });
+
+		await using var connection = await _db.OpenAsync();
+		const string sql = """
+			DELETE FROM dash.DashboardLayoutPreset
+			WHERE PresetId = @PresetId AND DepartmentKey = @DepartmentKey
+			  AND DashboardKey = @DashboardKey;
+			""";
+		var deleted = await connection.ExecuteAsync(new CommandDefinition(sql, new
+		{
+			PresetId = presetId, DepartmentKey = department, DashboardKey = dashboardKey
+		}, cancellationToken: cancellationToken));
+		return Ok(new { deleted = deleted > 0 });
+	}
+
+	public sealed class DashboardPresetRequest
+	{
+		public string PresetName { get; set; } = "";
+		public string? Description { get; set; }
+		public JsonElement Layout { get; set; }
+	}
+
 	[HttpGet("departments")]
 	public async Task<IActionResult> GetDepartments(CancellationToken cancellationToken)
 	{

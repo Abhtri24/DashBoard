@@ -200,6 +200,42 @@ export async function deleteDepartmentLayout(department, dashboardKey) {
     );
 }
 
+
+export async function loadDashboardPresets(department, dashboardKey) {
+    return request(
+        `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/presets?department=${encodeURIComponent(department)}`
+    );
+}
+
+export async function createDashboardPreset(department, dashboardKey, preset) {
+    return request(
+        `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/presets?department=${encodeURIComponent(department)}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(preset)
+        }
+    );
+}
+
+export async function updateDashboardPreset(department, dashboardKey, presetId, preset) {
+    return request(
+        `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/presets/${presetId}?department=${encodeURIComponent(department)}`,
+        {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(preset)
+        }
+    );
+}
+
+export async function deleteDashboardPreset(department, dashboardKey, presetId) {
+    return request(
+        `/api/dash/dashboard/${encodeURIComponent(dashboardKey)}/presets/${presetId}?department=${encodeURIComponent(department)}`,
+        { method: 'DELETE' }
+    );
+}
+
 export async function loadDrilldown(payload) {
     return request('/api/dash/drilldown', {
         method: 'POST',

@@ -25,16 +25,11 @@
             <button id="refreshDataButton" class="btn btn-outline-secondary" type="button">Refresh data</button>
             <button id="discardLayoutButton" class="btn btn-outline-secondary" type="button" disabled>Discard</button>
             <button id="saveLayoutButton" class="btn btn-success" type="button" disabled>Save layout</button>
-            <button id="publishDepartmentLayoutButton"
-                    class="btn btn-primary d-none"
-                    type="button">
-                Publish for department
+            <button id="manageLayoutsButton" class="btn btn-outline-primary d-none" type="button">
+                Manage layouts
             </button>
-
-            <button id="removeDepartmentLayoutButton"
-                    class="btn btn-outline-danger d-none"
-                    type="button">
-                Remove department layout
+            <button id="openLayoutLibraryButton" class="btn btn-outline-primary" type="button">
+                Choose layout
             </button>
             <button id="editLayoutButton" class="btn btn-outline-secondary" type="button">Edit layout</button>
             <button id="addCardButton" class="btn btn-primary" type="button">
@@ -47,6 +42,50 @@
     <div id="dashboardError" class="alert alert-danger d-none" role="alert"></div>
     <div id="dashboardLoading" class="text-secondary py-4">Loading dashboard...</div>
     <div id="dashboardWidgets" class="dashboard-grid d-none"></div>
+</div>
+
+
+<div class="modal fade" id="layoutLibraryModal" tabindex="-1" aria-labelledby="layoutLibraryTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title" id="layoutLibraryTitle">Dashboard layouts</h5>
+                    <div class="small text-secondary">Apply a published layout to your personal dashboard. Admins can also manage department layouts.</div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="presetList" class="d-flex flex-column gap-2"></div>
+                <div id="presetListError" class="alert alert-danger d-none mt-3"></div>
+                <div class="small text-secondary mt-3">Applying a layout saves a personal copy. Changes you make afterwards will not change the original preset.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="presetEditorModal" tabindex="-1" aria-labelledby="presetEditorTitle" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="presetEditorTitle">Save dashboard preset</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editingPresetId" />
+                <label for="presetNameInput" class="form-label">Preset name</label>
+                <input id="presetNameInput" class="form-control mb-3" maxlength="100" placeholder="e.g. Sales Overview" />
+                <label for="presetDescriptionInput" class="form-label">Description (optional)</label>
+                <textarea id="presetDescriptionInput" class="form-control" rows="2" maxlength="300"></textarea>
+                <div id="presetModalError" class="alert alert-danger d-none mt-3"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                <button id="savePresetButton" type="button" class="btn btn-primary">Save as preset</button>
+                <button id="updatePresetButton" type="button" class="btn btn-primary">Update preset</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="modal fade" id="widgetModal" tabindex="-1" aria-labelledby="widgetModalTitle" aria-hidden="true">
