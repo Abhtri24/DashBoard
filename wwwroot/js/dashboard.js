@@ -457,13 +457,17 @@ import { createWidgetBuilder } from './widget-builder.js';
             const create = document.createElement('button');
             create.type = 'button';
             create.className = 'btn btn-primary align-self-start';
-            create.textContent = 'Save current dashboard as a preset';
+            create.textContent = $('editingPresetId').value
+                ? 'Update selected preset from current dashboard'
+                : 'Save current dashboard as a preset';
             create.addEventListener('click', () => {
-                $('editingPresetId').value = '';
-                $('presetNameInput').value = '';
-                $('presetDescriptionInput').value = '';
-                $('savePresetButton').classList.remove('d-none');
-                $('updatePresetButton').classList.add('d-none');
+                if ($('editingPresetId').value) {
+                    $('savePresetButton').classList.add('d-none');
+                    $('updatePresetButton').classList.remove('d-none');
+                } else {
+                    $('savePresetButton').classList.remove('d-none');
+                    $('updatePresetButton').classList.add('d-none');
+                }
                 bootstrap.Modal.getOrCreateInstance($('presetEditorModal')).show();
             });
             host.append(create);
