@@ -511,11 +511,6 @@ import { createWidgetBuilder } from './widget-builder.js';
     }
 
     async function openLayoutManager() {
-        $('editingPresetId').value = '';
-        $('presetNameInput').value = '';
-        $('presetDescriptionInput').value = '';
-        $('savePresetButton').classList.remove('d-none');
-        $('updatePresetButton').classList.add('d-none');
         clearError($('presetModalError'));
         try {
             await renderPresetList(true);
@@ -610,11 +605,9 @@ import { createWidgetBuilder } from './widget-builder.js';
                 $('editingPresetId').value = String(presetId);
                 $('presetNameInput').value = preset.presetName || preset.PresetName || '';
                 $('presetDescriptionInput').value = preset.description || preset.Description || '';
-                $('savePresetButton').classList.add('d-none');
-                $('updatePresetButton').classList.remove('d-none');
                 bootstrap.Modal.getOrCreateInstance($('layoutLibraryModal')).hide();
-                bootstrap.Modal.getOrCreateInstance($('presetEditorModal')).show();
                 await builder.renderLocalDashboard();
+                showNotice('Preset loaded for editing. Modify the widgets, then open Manage layouts and choose Save current dashboard as a preset to update it.');
             } else if (button.dataset.action === 'delete') {
                 if (!confirm('Delete this preset? Users who already applied it keep their personal layouts.')) return;
                 try {
