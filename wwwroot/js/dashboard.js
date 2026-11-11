@@ -5,8 +5,6 @@
 import {
     loadUIConfiguration,
     loadDepartments,
-    loadSelectedDepartment,
-    saveDepartment,
     loadDashboards,
     loadDashboard as fetchDashboard,
     loadDatasets as fetchDatasets,
@@ -702,8 +700,12 @@ import { createWidgetBuilder } from './widget-builder.js';
             activeUserId = requestedUserId;
 
             // Backend validates the user and establishes the session context.
-            await selectDemoUser(activeUserId);
+            const userContext = await selectDemoUser(activeUserId);
+            activeDepartment = userContext.department || userContext.Department;
 
+            if (!activeDepartment) {
+                throw new Error('Could not determine the user’s default department.');
+            }
 
             const departments = await loadDepartments();
             departmentRoles = new Map(
@@ -713,21 +715,7 @@ import { createWidgetBuilder } from './widget-builder.js';
             }
 
 
-            let selectedDepartment = null;
-
-            try {
-                const selected = await loadSelectedDepartment();
-                selectedDepartment = selected.department || selected.Department;
-            } catch {
-                // Department selection is reset when the demo user changes.
-            }
-
-            if (!departments.some(item => item.key === selectedDepartment)) {
-                selectedDepartment = departments[0].key;
-                await saveDepartment(selectedDepartment);
-            }
-
-            activeDepartment = selectedDepartment;
+        
 
             updateDepartmentLayoutControls();
 

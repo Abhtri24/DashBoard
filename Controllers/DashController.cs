@@ -165,39 +165,32 @@ public class DashController : ControllerBase
 		if (request.UserId <= 0)
 			return BadRequest(new { error = "Select a valid demo user." });
 
-		await using var connection = await _db.OpenAsync();
-		const string sql = """
-			SELECT CASE WHEN EXISTS
-			(
-				SELECT 1
-				FROM org.DemoUser u
-				WHERE u.UserId = @UserId
-				  AND u.IsActive = 1
-				  AND EXISTS
-				  (
-					  SELECT 1
-					  FROM org.UserDepartment ud
-					  INNER JOIN dash.Department d
-						  ON d.DepartmentKey = ud.DepartmentKey
-					  WHERE ud.UserId = u.UserId
-					    AND d.IsActive = 1
-				  )
-			) THEN 1 ELSE 0 END;
-			""";
-		var exists = await connection.ExecuteScalarAsync<bool>(
-			new CommandDefinition(
-				sql,
-				new { request.UserId },
-				cancellationToken: cancellationToken));
+		var defaultDepartment = await _departmentRepository.GetDefaultDepartmentAsync(
+			request.UserId,
+			cancellationToken);
 
-		if (!exists)
-			return BadRequest(new { error = "The selected demo user does not exist, is inactive, or has no active department membership." });
+		if (string.IsNullOrWhiteSpace(defaultDepartment))
+		{
+			return BadRequest(new
+			{
+				error = "The selected demo user does not exist, is inactive, or has no active department membership."
+			});
+		}
 
-		HttpContext.Session.SetInt32(GetTabSessionKey(DemoUserSessionKey), request.UserId);
-		HttpContext.Session.Remove(GetTabSessionKey(DepartmentSessionKey));
-		return Ok(new { userId = request.UserId });
+		HttpContext.Session.SetInt32(
+			GetTabSessionKey(DemoUserSessionKey),
+			request.UserId);
+
+		HttpContext.Session.SetString(
+			GetTabSessionKey(DepartmentSessionKey),
+			defaultDepartment);
+
+		return Ok(new
+		{
+			userId = request.UserId,
+			department = defaultDepartment
+		});
 	}
-
 	[HttpGet("demo-user")]
 	public IActionResult GetDemoUser()
 	{
@@ -517,80 +510,21 @@ public class DashController : ControllerBase
 	}
 
 	[HttpGet("departments")]
-	public async Task<IActionResult> GetDepartments(CancellationToken cancellationToken)
+	public async Task<IActionResult> GetDepartments(
+		CancellationToken cancellationToken)
 	{
 		var userId = GetActiveDemoUserId();
+
 		if (!userId.HasValue)
 			return BadRequest(new { error = "Select a demo user first." });
 
-		await using var connection = await _db.OpenAsync();
-		const string sql = """
-			SELECT
-				d.DepartmentKey AS [key],
-				d.DisplayName AS [label],
-				COALESCE(ud.DepartmentRole, N'User') AS [role]
-			FROM org.UserDepartment ud
-			INNER JOIN dash.Department d
-				ON d.DepartmentKey = ud.DepartmentKey
-			WHERE ud.UserId = @UserId
-			  AND d.IsActive = 1
-			ORDER BY d.SortOrder, d.DisplayName;
-			""";
-
-		var departments = await connection.QueryAsync(
-			new CommandDefinition(
-				sql,
-				new { UserId = userId.Value },
-				cancellationToken: cancellationToken));
+		var departments = await _departmentRepository.GetDepartmentsAsync(
+			userId.Value,
+			cancellationToken);
 
 		return Ok(departments);
 	}
 
-	[HttpPost("department")]
-	public async Task<IActionResult> SetDepartment(
-		[FromBody] DepartmentRequest request,
-		CancellationToken cancellationToken)
-	{
-		var department = request.Department?.Trim();
-		var userId = GetActiveDemoUserId();
-
-		if (!userId.HasValue)
-			return BadRequest(new { error = "Select a demo user first." });
-
-		if (string.IsNullOrWhiteSpace(department))
-			return BadRequest(new { error = "Select a department." });
-
-		if (!await _departmentRepository.HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
-			return StatusCode(403, new { error = "You do not have access to the selected department." });
-
-		HttpContext.Session.SetString(GetTabSessionKey(DepartmentSessionKey), department);
-		return Ok(new { department });
-	}
-
-	[HttpGet("department")]
-	public async Task<IActionResult> GetDepartment(CancellationToken cancellationToken)
-	{
-		var userId = GetActiveDemoUserId();
-		if (!userId.HasValue)
-			return BadRequest(new { error = "Select a demo user first." });
-
-		var department = GetActiveDepartment();
-		if (string.IsNullOrWhiteSpace(department))
-			return Ok(new { department = (string?)null });
-
-		if (!await _departmentRepository.HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
-		{
-			HttpContext.Session.Remove(GetTabSessionKey(DepartmentSessionKey));
-			return StatusCode(403, new { error = "The selected department is not assigned to this user." });
-		}
-
-		return Ok(new { department });
-	}
-
-	public sealed class DepartmentRequest
-	{
-		public string Department { get; set; } = "";
-	}
 
 	[HttpGet("query-builder/datasets")]
 	public async Task<IActionResult> GetQueryBuilderDatasets(

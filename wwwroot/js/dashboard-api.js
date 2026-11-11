@@ -88,23 +88,9 @@ export async function loadDepartments() {
         }));
 }
 
-export async function loadSelectedDepartment() {
-    return request('/api/dash/department');
-}
 
-export async function saveDepartment(department) {
-    const response = await fetch('/api/dash/department', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Dashboard-Tab': getDashboardTabId() },
-        body: JSON.stringify({ department })
-    });
 
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok) {
-        throw new Error(data?.error || 'Could not update department.');
-    }
-}
+ 
 
 export async function loadDashboards() {
     const list = await request('/api/dash/dashboards');
