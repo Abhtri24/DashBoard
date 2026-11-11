@@ -15,7 +15,6 @@ public class DashController : ControllerBase
 {
 	private readonly SqlConnectionFactory _db;
 	private readonly DepartmentRepository _departmentRepository;
-	private readonly DashboardLayoutRepository _dashboardLayoutRepository;
 	private readonly CatalogService _catalog;
 	private readonly DashboardQueryService _queryService;
 	private readonly DashboardOverviewService _overviewService;
@@ -48,10 +47,11 @@ public class DashController : ControllerBase
 
 	private readonly DashboardRepository _dashboardRepository;
 
+	private readonly DashboardLayoutService _dashboardLayoutService;
+
 	public DashController(
 		SqlConnectionFactory db,
 		DepartmentRepository departmentRepository,
-		DashboardLayoutRepository dashboardLayoutRepository,
 		CatalogService catalog,
 		DashboardQueryService queryService,
 		DashboardOverviewService overviewService,
@@ -69,13 +69,11 @@ public class DashController : ControllerBase
 		UIConfigurationService uiConfigurationService,
 		IMemoryCache cache,
 		PdfExportService pdfExportService,
-		DashboardRepository dashboardRepository
-
-		)
+		DashboardRepository dashboardRepository,
+		DashboardLayoutService dashboardLayoutService)
 	{
 		_db = db;
 		_departmentRepository = departmentRepository;
-		_dashboardLayoutRepository = dashboardLayoutRepository;
 		_catalog = catalog;
 		_queryService = queryService;
 		_overviewService = overviewService;
@@ -94,8 +92,12 @@ public class DashController : ControllerBase
 		_cache = cache;
 		_pdfExportService = pdfExportService;
 		_dashboardRepository = dashboardRepository;
+		_dashboardLayoutService = dashboardLayoutService;
 	}
-
+	private IActionResult FromServiceResult(DashboardLayoutService.Result result)
+	{
+		return StatusCode(result.StatusCode, result.Data);
+	}
 	private sealed record CachedWidgetExport(
 	int UserId,
 	string Department,
@@ -118,7 +120,7 @@ public class DashController : ControllerBase
 		});
 	}
 
-	
+
 	private const string DepartmentSessionKey = "ActiveDepartment";
 	private const string DemoUserSessionKey = "ActiveDemoUserId";
 	private const string DashboardTabHeader = "X-Dashboard-Tab";
@@ -137,7 +139,7 @@ public class DashController : ControllerBase
 
 	private string? GetActiveDepartment() =>
 		HttpContext.Session.GetString(GetTabSessionKey(DepartmentSessionKey));
-		
+
 	private async Task<IActionResult?> CheckDepartmentAccessAsync(
 		string? department,
 		CancellationToken cancellationToken)
@@ -211,20 +213,9 @@ public class DashController : ControllerBase
 		[FromQuery] string department,
 		CancellationToken cancellationToken)
 	{
-		var userId = GetActiveDemoUserId();
-		if (!userId.HasValue)
-			return BadRequest(new { error = "Select a demo user first." });
-
-		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
-		if (accessError is not null)
-			return accessError;
-
-		if (string.IsNullOrWhiteSpace(department) || string.IsNullOrWhiteSpace(dashboardKey))
-			return BadRequest(new { error = "Dashboard and department are required." });
-
-		var layout = await _dashboardLayoutRepository.GetUserLayoutAsync(
-			userId.Value, dashboardKey, department, cancellationToken);
-		return Ok(layout);
+		var result = await _dashboardLayoutService.GetUserLayoutAsync(
+			GetActiveDemoUserId(), dashboardKey, department, cancellationToken);
+		return FromServiceResult(result);
 	}
 
 	[HttpPut("dashboard/{dashboardKey}/layout")]
@@ -234,29 +225,9 @@ public class DashController : ControllerBase
 		[FromBody] JsonElement layout,
 		CancellationToken cancellationToken)
 	{
-		var userId = GetActiveDemoUserId();
-		if (!userId.HasValue)
-			return BadRequest(new { error = "Select a demo user first." });
-
-		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
-		if (accessError is not null)
-			return accessError;
-
-		if (string.IsNullOrWhiteSpace(department) || string.IsNullOrWhiteSpace(dashboardKey))
-			return BadRequest(new { error = "Dashboard and department are required." });
-		if (layout.ValueKind != JsonValueKind.Array)
-			return BadRequest(new { error = "Layout must be a JSON array of widgets." });
-
-		var layoutJson = layout.GetRawText();
-		if (layoutJson.Length > 1_000_000)
-			return BadRequest(new { error = "Layout is too large (maximum 1 MB)." });
-
-		var saved = await _dashboardLayoutRepository.SaveUserLayoutAsync(
-			userId.Value, dashboardKey, department, layoutJson, cancellationToken);
-		if (!saved)
-			return NotFound(new { error = "Dashboard not found for this department." });
-
-		return Ok(new { saved = true });
+		var result = await _dashboardLayoutService.SaveUserLayoutAsync(
+			GetActiveDemoUserId(), dashboardKey, department, layout, cancellationToken);
+		return FromServiceResult(result);
 	}
 
 	[HttpGet("dashboard/{dashboardKey}/department-layout")]
@@ -265,20 +236,9 @@ public class DashController : ControllerBase
 		[FromQuery] string department,
 		CancellationToken cancellationToken)
 	{
-		var userId = GetActiveDemoUserId();
-		if (!userId.HasValue)
-			return BadRequest(new { error = "Select a demo user first." });
-
-		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
-		if (accessError is not null)
-			return accessError;
-
-		if (string.IsNullOrWhiteSpace(dashboardKey))
-			return BadRequest(new { error = "Dashboard is required." });
-
-		var layout = await _dashboardLayoutRepository.GetDepartmentLayoutAsync(
-			dashboardKey, department, cancellationToken);
-		return Ok(layout);
+		var result = await _dashboardLayoutService.GetDepartmentLayoutAsync(
+			GetActiveDemoUserId(), dashboardKey, department, cancellationToken);
+		return FromServiceResult(result);
 	}
 
 	[HttpPut("dashboard/{dashboardKey}/department-layout")]
@@ -288,38 +248,9 @@ public class DashController : ControllerBase
 		[FromBody] JsonElement layout,
 		CancellationToken cancellationToken)
 	{
-		var userId = GetActiveDemoUserId();
-		if (!userId.HasValue)
-			return BadRequest(new { error = "Select a demo user first." });
-
-		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
-		if (accessError is not null)
-			return accessError;
-
-		if (!await _departmentRepository.HasDepartmentAdminAccessAsync(
-			userId.Value, department, cancellationToken))
-		{
-			return StatusCode(403, new
-			{
-				error = "Only department admins can publish department layouts."
-			});
-		}
-
-		if (string.IsNullOrWhiteSpace(dashboardKey))
-			return BadRequest(new { error = "Dashboard is required." });
-		if (layout.ValueKind != JsonValueKind.Array)
-			return BadRequest(new { error = "Layout must be a JSON array of widgets." });
-
-		var layoutJson = layout.GetRawText();
-		if (layoutJson.Length > 1_000_000)
-			return BadRequest(new { error = "Layout is too large (maximum 1 MB)." });
-
-		var published = await _dashboardLayoutRepository.PublishDepartmentLayoutAsync(
-			userId.Value, dashboardKey, department, layoutJson, cancellationToken);
-		if (!published)
-			return NotFound(new { error = "Dashboard not found for this department." });
-
-		return Ok(new { published = true });
+		var result = await _dashboardLayoutService.PublishDepartmentLayoutAsync(
+			GetActiveDemoUserId(), dashboardKey, department, layout, cancellationToken);
+		return FromServiceResult(result);
 	}
 
 	[HttpDelete("dashboard/{dashboardKey}/department-layout")]
@@ -328,29 +259,9 @@ public class DashController : ControllerBase
 		[FromQuery] string department,
 		CancellationToken cancellationToken)
 	{
-		var userId = GetActiveDemoUserId();
-		if (!userId.HasValue)
-			return BadRequest(new { error = "Select a demo user first." });
-
-		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
-		if (accessError is not null)
-			return accessError;
-
-		if (!await _departmentRepository.HasDepartmentAdminAccessAsync(
-			userId.Value, department, cancellationToken))
-		{
-			return StatusCode(403, new
-			{
-				error = "Only department admins can remove department layouts."
-			});
-		}
-
-		if (string.IsNullOrWhiteSpace(dashboardKey))
-			return BadRequest(new { error = "Dashboard is required." });
-
-		await _dashboardLayoutRepository.DeleteDepartmentLayoutAsync(
-			dashboardKey, department, cancellationToken);
-		return Ok(new { deleted = true });
+		var result = await _dashboardLayoutService.DeleteDepartmentLayoutAsync(
+			GetActiveDemoUserId(), dashboardKey, department, cancellationToken);
+		return FromServiceResult(result);
 	}
 
 	[HttpGet("dashboard/{dashboardKey}/presets")]
@@ -359,15 +270,9 @@ public class DashController : ControllerBase
 		[FromQuery] string department,
 		CancellationToken cancellationToken)
 	{
-		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
-		if (accessError is not null)
-			return accessError;
-		if (string.IsNullOrWhiteSpace(dashboardKey))
-			return BadRequest(new { error = "Dashboard is required." });
-
-		var presets = await _dashboardLayoutRepository.GetDashboardPresetsAsync(
-			dashboardKey, department, cancellationToken);
-		return Ok(presets);
+		var result = await _dashboardLayoutService.GetDashboardPresetsAsync(
+			GetActiveDemoUserId(), dashboardKey, department, cancellationToken);
+		return FromServiceResult(result);
 	}
 
 	[HttpPost("dashboard/{dashboardKey}/presets")]
@@ -377,54 +282,10 @@ public class DashController : ControllerBase
 		[FromBody] DashboardPresetRequest request,
 		CancellationToken cancellationToken)
 	{
-		var userId = GetActiveDemoUserId();
-		if (!userId.HasValue)
-			return BadRequest(new { error = "Select a demo user first." });
-
-		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
-		if (accessError is not null)
-			return accessError;
-		if (!await _departmentRepository.HasDepartmentAdminAccessAsync(
-			userId.Value, department, cancellationToken))
-		{
-			return StatusCode(403, new { error = "Only department admins can manage layout presets." });
-		}
-
-		if (string.IsNullOrWhiteSpace(dashboardKey) ||
-			string.IsNullOrWhiteSpace(request.PresetName) ||
-			request.PresetName.Trim().Length > 100)
-		{
-			return BadRequest(new { error = "A preset name of up to 100 characters is required." });
-		}
-		if (request.Layout.ValueKind != JsonValueKind.Array)
-			return BadRequest(new { error = "Layout must be a JSON array of widgets." });
-
-		var layoutJson = request.Layout.GetRawText();
-		if (layoutJson.Length > 1_000_000)
-			return BadRequest(new { error = "Layout is too large (maximum 1 MB)." });
-
-		if (!await _dashboardLayoutRepository.DashboardExistsAsync(
-			dashboardKey, department, cancellationToken))
-		{
-			return NotFound(new { error = "Dashboard not found for this department." });
-		}
-
-		try
-		{
-			var id = await _dashboardLayoutRepository.CreateDashboardPresetAsync(
-				dashboardKey,
-				department,
-				request.PresetName.Trim(),
-				string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
-				layoutJson,
-				userId.Value,
-				cancellationToken);
-			return Ok(new { presetId = id, saved = true });
-		}
-		catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number is 2601 or 2627)
-		{
-			return Conflict(new { error = "A preset with that name already exists for this dashboard." });
-		}
+		var result = await _dashboardLayoutService.CreateDashboardPresetAsync(
+			GetActiveDemoUserId(), dashboardKey, department,
+			request.PresetName, request.Description, request.Layout, cancellationToken);
+		return FromServiceResult(result);
 	}
 
 	[HttpPut("dashboard/{dashboardKey}/presets/{presetId:int}")]
@@ -435,46 +296,10 @@ public class DashController : ControllerBase
 		[FromBody] DashboardPresetRequest request,
 		CancellationToken cancellationToken)
 	{
-		var userId = GetActiveDemoUserId();
-		if (!userId.HasValue)
-			return BadRequest(new { error = "Select a demo user first." });
-
-		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
-		if (accessError is not null)
-			return accessError;
-		if (!await _departmentRepository.HasDepartmentAdminAccessAsync(
-			userId.Value, department, cancellationToken))
-		{
-			return StatusCode(403, new { error = "Only department admins can manage layout presets." });
-		}
-
-		if (string.IsNullOrWhiteSpace(request.PresetName) || request.PresetName.Trim().Length > 100)
-			return BadRequest(new { error = "A preset name of up to 100 characters is required." });
-		if (request.Layout.ValueKind != JsonValueKind.Array)
-			return BadRequest(new { error = "Layout must be a JSON array of widgets." });
-
-		var layoutJson = request.Layout.GetRawText();
-		if (layoutJson.Length > 1_000_000)
-			return BadRequest(new { error = "Layout is too large (maximum 1 MB)." });
-
-		try
-		{
-			var changed = await _dashboardLayoutRepository.UpdateDashboardPresetAsync(
-				dashboardKey,
-				presetId,
-				department,
-				request.PresetName.Trim(),
-				string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
-				layoutJson,
-				cancellationToken);
-			return changed == 0
-				? NotFound(new { error = "Preset not found." })
-				: Ok(new { saved = true });
-		}
-		catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number is 2601 or 2627)
-		{
-			return Conflict(new { error = "A preset with that name already exists for this dashboard." });
-		}
+		var result = await _dashboardLayoutService.UpdateDashboardPresetAsync(
+			GetActiveDemoUserId(), dashboardKey, presetId, department,
+			request.PresetName, request.Description, request.Layout, cancellationToken);
+		return FromServiceResult(result);
 	}
 
 	[HttpDelete("dashboard/{dashboardKey}/presets/{presetId:int}")]
@@ -484,22 +309,9 @@ public class DashController : ControllerBase
 		[FromQuery] string department,
 		CancellationToken cancellationToken)
 	{
-		var userId = GetActiveDemoUserId();
-		if (!userId.HasValue)
-			return BadRequest(new { error = "Select a demo user first." });
-
-		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
-		if (accessError is not null)
-			return accessError;
-		if (!await _departmentRepository.HasDepartmentAdminAccessAsync(
-			userId.Value, department, cancellationToken))
-		{
-			return StatusCode(403, new { error = "Only department admins can manage layout presets." });
-		}
-
-		var deleted = await _dashboardLayoutRepository.DeleteDashboardPresetAsync(
-			dashboardKey, presetId, department, cancellationToken);
-		return Ok(new { deleted = deleted > 0 });
+		var result = await _dashboardLayoutService.DeleteDashboardPresetAsync(
+			GetActiveDemoUserId(), dashboardKey, presetId, department, cancellationToken);
+		return FromServiceResult(result);
 	}
 
 	public sealed class DashboardPresetRequest
@@ -662,7 +474,7 @@ public class DashController : ControllerBase
 		[FromQuery] string department,
 		[FromQuery] string? title = null,
 		[FromQuery] int page = 1,
-		[FromQuery] int pageSize = 100,	
+		[FromQuery] int pageSize = 100,
 		CancellationToken cancellationToken = default)
 	{
 		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
@@ -691,11 +503,11 @@ public class DashController : ControllerBase
 
 		var userId = GetActiveDemoUserId();
 
-		if(!userId.HasValue)
+		if (!userId.HasValue)
 			return BadRequest(new { error = "Select a demo user first." });
 
 		if (!Guid.TryParse(Request.Headers[DashboardTabHeader].ToString(), out var tabId))
-		{ 
+		{
 			return BadRequest(new { error = "Invalid dashboard tab." });
 		}
 
@@ -709,7 +521,7 @@ public class DashController : ControllerBase
 				string.IsNullOrWhiteSpace(title) ? widgetKey : title,
 
 			columns,
-			rows);	
+			rows);
 
 		_cache.Set(
 			$"widget-export:{exportId:N}",
@@ -718,8 +530,11 @@ public class DashController : ControllerBase
 
 
 
-		return Ok(new { 
-		rows,exportId});
+		return Ok(new
+		{
+			rows,
+			exportId
+		});
 	}
 
 
@@ -773,18 +588,18 @@ public class DashController : ControllerBase
 
 
 	[HttpGet("relationships")]
-public async Task<IActionResult> GetRelationships(
-    [FromQuery] string? schemaName,
-    [FromQuery] string? datasetKey,
-    CancellationToken cancellationToken)
-{
-    var graph = await _relationshipService.BuildGraphAsync(
-        schemaName,
-        cancellationToken,
-        datasetKey);
+	public async Task<IActionResult> GetRelationships(
+	[FromQuery] string? schemaName,
+	[FromQuery] string? datasetKey,
+	CancellationToken cancellationToken)
+	{
+		var graph = await _relationshipService.BuildGraphAsync(
+			schemaName,
+			cancellationToken,
+			datasetKey);
 
-    return Ok(graph);
-}
+		return Ok(graph);
+	}
 
 	[HttpGet("dashboard/{dashboardKey}")]
 	public async Task<IActionResult> GetDashboard(
@@ -978,7 +793,7 @@ public async Task<IActionResult> GetRelationships(
 	[HttpGet("schema")]
 	public async Task<IActionResult> GetSchema(
 		[FromQuery] string? schemaName, CancellationToken cancellationToken)
-	
+
 	{
 		var schema = await _schemaDiscovery.DiscoverAsync(schemaName, cancellationToken);
 		return Ok(schema);

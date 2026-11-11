@@ -33,6 +33,7 @@ builder.Services.AddScoped<DashboardWidgetQueryService>();
 builder.Services.AddScoped<DashboardQueryService>();
 builder.Services.AddScoped<PdfExportService>();
 builder.Services.AddScoped<UIConfigurationService>();
+builder.Services.AddScoped<DashboardLayoutService>();
 
 
 builder.Services.AddDistributedMemoryCache();
