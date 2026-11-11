@@ -11,6 +11,9 @@ builder.Services.AddControllers();
 builder.Services.AddSingleton<SqlConnectionFactory>();
 builder.Services.AddScoped<DepartmentRepository>();
 builder.Services.AddScoped<DashboardLayoutRepository>();
+builder.Services.AddScoped<DashboardRepository>();
+
+
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<DatasetMetadataProvider>();
 builder.Services.AddScoped<DashboardDrilldownService>();
@@ -35,7 +38,7 @@ builder.Services.AddScoped<UIConfigurationService>();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
-	options.IdleTimeout = TimeSpan.FromHours(1);
+	options.IdleTimeout = TimeSpan.FromHours(2);
 	options.Cookie.HttpOnly = true;
 	options.Cookie.IsEssential = true;
 });

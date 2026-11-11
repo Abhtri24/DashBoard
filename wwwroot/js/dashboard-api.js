@@ -106,10 +106,9 @@ export async function saveDepartment(department) {
     }
 }
 
-export async function loadDashboards(department) {
-    const list = await request(
-        `/api/dash/dashboards?department=${encodeURIComponent(department)}`
-    );
+export async function loadDashboards() {
+    const list = await request('/api/dash/dashboards');
+
 
     const items = Array.isArray(list)
         ? list
@@ -177,10 +176,6 @@ export async function loadWidget(department, dashboardKey, widgetKey, title) {
     );
 }
 
-
-export async function loadDemoUsers() {
-    return request('/api/dash/demo-users');
-}
 
 export async function selectDemoUser(userId) {
     return request('/api/dash/demo-user', {

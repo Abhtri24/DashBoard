@@ -13,7 +13,6 @@ import {
     loadMetadata as fetchMetadata,
     executeQuery,
     loadWidget,
-    loadDemoUsers,
     selectDemoUser,
     loadSelectedDemoUser,
     loadUserLayout,
@@ -36,8 +35,6 @@ import { createWidgetBuilder } from './widget-builder.js';
     const $ = id => document.getElementById(id);
 
     const dashboardSelect = $('dashboardSelect');
-    const departmentSelect = $('departmentSelect');
-    const demoUserSelect = $('demoUserSelect');
     const widgetsHost = $('dashboardWidgets');
     const loading = $('dashboardLoading');
     const errorBox = $('dashboardError');
@@ -197,7 +194,7 @@ import { createWidgetBuilder } from './widget-builder.js';
     let widgets = [];
     let editMode = false;
     let activeUserId = null;
-
+    let activeDepartment = null;
     let departmentRoles = new Map();
 
     function updateDepartmentLayoutControls() {
@@ -226,7 +223,7 @@ import { createWidgetBuilder } from './widget-builder.js';
     }
 
     function getDepartment() {
-        return departmentSelect.value;
+        return activeDepartment;
     }
 
     function getDashboardKey() {
@@ -442,8 +439,7 @@ import { createWidgetBuilder } from './widget-builder.js';
     }
 
     async function refreshDashboardList() {
-        const items = await loadDashboards(getDepartment());
-
+        const items = await loadDashboards();
         dashboardSelect.replaceChildren();
 
         items.forEach(item => {
@@ -663,31 +659,6 @@ import { createWidgetBuilder } from './widget-builder.js';
             await loadDashboard();
         });
 
-        demoUserSelect.addEventListener('change', async () => {
-            try {
-                await selectDemoUser(Number(demoUserSelect.value));
-                activeUserId = Number(demoUserSelect.value);
-
-                const departments = await loadDepartments();
-                departmentRoles = new Map(
-                    departments.map(item => [item.key, item.role])
-                );
-                if (!departments.length) {
-                    throw new Error('This user has no active department memberships.');
-                }
-
-                departmentSelect.replaceChildren(
-                    ...departments.map(item => new Option(item.label, item.key))
-                );
-
-                await saveDepartment(departments[0].key);
-                updateDepartmentLayoutControls();
-                await refreshDashboardList();
-                await loadDashboard();
-            } catch (error) {
-                showError(error.message);
-            }
-        });
 
         $('editLayoutButton').addEventListener('click', () => {
             editMode = !editMode;
@@ -717,55 +688,22 @@ import { createWidgetBuilder } from './widget-builder.js';
 
         dashboardSelect.addEventListener('change', loadDashboard);
 
-        departmentSelect.addEventListener('change', async () => {
-            clearError();
-
-            try {
-                await saveDepartment(getDepartment());
-                updateDepartmentLayoutControls();
-                await refreshDashboardList();
-                await loadDashboard();
-            } catch (error) {
-                loading.classList.add('d-none');
-                showError(error.message);
-            }
-        });
+    
     }
 
     async function initialize() {
         try {
-            const demoUsers = await loadDemoUsers();
-            if (!demoUsers.length) {
-                throw new Error('No active demo users with department memberships are configured.');
+            const requestedUserId = Number($('dashboardUserId')?.value);
+
+            if (!Number.isInteger(requestedUserId) || requestedUserId <= 0) {
+                throw new Error('A valid userId must be supplied in the URL.');
             }
 
-            demoUserSelect.replaceChildren(
-                ...demoUsers.map(user => new Option(
-                    user.displayName || user.DisplayName,
-                    user.userId || user.UserId
-                ))
-            );
+            activeUserId = requestedUserId;
 
-            try {
-                const selected = await loadSelectedDemoUser();
-                activeUserId = Number(selected.userId || selected.UserId);
-            } catch {
-                activeUserId = Number(
-                    demoUsers[0].userId || demoUsers[0].UserId
-                );
-                await selectDemoUser(activeUserId);
-            }
+            // Backend validates the user and establishes the session context.
+            await selectDemoUser(activeUserId);
 
-            if (!demoUsers.some(user =>
-                Number(user.userId || user.UserId) === activeUserId
-            )) {
-                activeUserId = Number(
-                    demoUsers[0].userId || demoUsers[0].UserId
-                );
-                await selectDemoUser(activeUserId);
-            }
-
-            demoUserSelect.value = String(activeUserId);
 
             const departments = await loadDepartments();
             departmentRoles = new Map(
@@ -774,11 +712,9 @@ import { createWidgetBuilder } from './widget-builder.js';
                 throw new Error('This user has no active department memberships.');
             }
 
-            departmentSelect.replaceChildren(
-                ...departments.map(item => new Option(item.label, item.key))
-            );
 
             let selectedDepartment = null;
+
             try {
                 const selected = await loadSelectedDepartment();
                 selectedDepartment = selected.department || selected.Department;
@@ -791,7 +727,8 @@ import { createWidgetBuilder } from './widget-builder.js';
                 await saveDepartment(selectedDepartment);
             }
 
-            departmentSelect.value = selectedDepartment;
+            activeDepartment = selectedDepartment;
+
             updateDepartmentLayoutControls();
 
             uiConfiguration = await loadUIConfiguration();

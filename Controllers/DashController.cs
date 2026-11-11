@@ -46,6 +46,8 @@ public class DashController : ControllerBase
 
 	private readonly PdfExportService _pdfExportService;
 
+	private readonly DashboardRepository _dashboardRepository;
+
 	public DashController(
 		SqlConnectionFactory db,
 		DepartmentRepository departmentRepository,
@@ -66,7 +68,8 @@ public class DashController : ControllerBase
 		QueryBuilderService queryBuilderService,
 		UIConfigurationService uiConfigurationService,
 		IMemoryCache cache,
-		PdfExportService pdfExportService
+		PdfExportService pdfExportService,
+		DashboardRepository dashboardRepository
 
 		)
 	{
@@ -90,6 +93,7 @@ public class DashController : ControllerBase
 		_uiConfigurationService = uiConfigurationService;
 		_cache = cache;
 		_pdfExportService = pdfExportService;
+		_dashboardRepository = dashboardRepository;
 	}
 
 	private sealed record CachedWidgetExport(
@@ -151,29 +155,7 @@ public class DashController : ControllerBase
 		return null;
 	}
 
-	[HttpGet("demo-users")]
-	public async Task<IActionResult> GetDemoUsers(CancellationToken cancellationToken)
-	{
-		await using var connection = await _db.OpenAsync();
-		const string sql = """
-			SELECT u.UserId, u.DisplayName
-			FROM org.DemoUser u
-			WHERE u.IsActive = 1
-			  AND EXISTS
-			  (
-				  SELECT 1
-				  FROM org.UserDepartment ud
-				  INNER JOIN dash.Department d
-					  ON d.DepartmentKey = ud.DepartmentKey
-				  WHERE ud.UserId = u.UserId
-				    AND d.IsActive = 1
-			  )
-			ORDER BY u.DisplayName;
-			""";
-		var users = await connection.QueryAsync(
-			new CommandDefinition(sql, cancellationToken: cancellationToken));
-		return Ok(users);
-	}
+
 
 	[HttpPost("demo-user")]
 	public async Task<IActionResult> SetDemoUser(
@@ -594,7 +576,7 @@ public class DashController : ControllerBase
 
 		var department = GetActiveDepartment();
 		if (string.IsNullOrWhiteSpace(department))
-			return BadRequest(new { error = "No department selected." });
+			return Ok(new { department = (string?)null });
 
 		if (!await _departmentRepository.HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
 		{
@@ -719,34 +701,21 @@ public class DashController : ControllerBase
 
 	[HttpGet("dashboards")]
 	public async Task<IActionResult> GetDashboards(
-	[FromQuery] string department,
-	CancellationToken cancellationToken)
+		CancellationToken cancellationToken)
 	{
-		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
+		var department = GetActiveDepartment();
+
+		var accessError = await CheckDepartmentAccessAsync(
+			department, cancellationToken);
+
 		if (accessError is not null)
 			return accessError;
 
 		if (string.IsNullOrWhiteSpace(department))
 			return BadRequest(new { error = "Department is required." });
 
-		await using var connection = await _db.OpenAsync();
-
-		const string sql = """
-        SELECT
-            DashboardKey,
-            DisplayName,
-            Description
-        FROM dash.Dashboard
-        WHERE DepartmentKey = @Department
-          AND IsActive = 1
-        ORDER BY IsDefault DESC, DisplayName;
-        """;
-
-		var dashboards = await connection.QueryAsync(
-			new CommandDefinition(
-				sql,
-				new { Department = department },
-				cancellationToken: cancellationToken));
+		var dashboards = await _dashboardRepository.GetDashboardsAsync(
+			department, cancellationToken);
 
 		return Ok(dashboards);
 	}
