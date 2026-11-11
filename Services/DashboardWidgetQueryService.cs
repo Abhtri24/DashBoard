@@ -9,6 +9,7 @@ namespace DashBoard.Services;
 public sealed class DashboardWidgetQueryService
 {
 	private readonly SqlConnectionFactory _db;
+	private readonly DatasetMetadataProvider _datasetMetadata;
 	private readonly DatabaseSchemaDiscoveryService _schemaDiscovery;
 	private readonly DatabaseRelationshipService _relationships;
 	private readonly AutomaticJoinPlannerService _joinPlanner;
@@ -19,6 +20,7 @@ public sealed class DashboardWidgetQueryService
 
 	public DashboardWidgetQueryService(
 		SqlConnectionFactory db,
+		DatasetMetadataProvider datasetMetadata,
 		DatabaseSchemaDiscoveryService schemaDiscovery,
 		DatabaseRelationshipService relationships,
 		AutomaticJoinPlannerService joinPlanner,
@@ -28,6 +30,7 @@ public sealed class DashboardWidgetQueryService
 		AggregationQueryExecutionService executor)
 	{
 		_db = db;
+		_datasetMetadata = datasetMetadata;
 		_schemaDiscovery = schemaDiscovery;
 		_relationships = relationships;
 		_joinPlanner = joinPlanner;
@@ -37,15 +40,7 @@ public sealed class DashboardWidgetQueryService
 		_executor = executor;
 	}
 
-	private sealed class DatasetTableRow
-	{
-		public int DatasetTableId { get; set; }
-		public string SchemaName { get; set; } = "";
-		public string ObjectName { get; set; } = "";
-		public string? TableAlias { get; set; }
-	}
-
-	private sealed class DatasetColumnRow
+		private sealed class DatasetColumnRow
 	{
 		public string ColumnKey { get; set; } = "";
 		public string ColumnName { get; set; } = "";
@@ -180,23 +175,10 @@ public sealed class DashboardWidgetQueryService
 			throw new ArgumentException("Widget has no configured fields.");
 
 		// Load enabled physical tables belonging to the dataset.
-		const string tablesSql = """
-            SELECT
-                DatasetTableId,
-                SchemaName,
-                ObjectName,
-                TableAlias,
-            FROM dash.DatasetTable
-            WHERE DatasetKey = @DatasetKey
-              AND IsEnabled = 1
-            ORDER BY IsPrimary DESC, DatasetTableId;
-            """;
-
-		var datasetTables = (await connection.QueryAsync<DatasetTableRow>(
-			new CommandDefinition(
-				tablesSql,
-				new { widget.DatasetKey },
-				cancellationToken: cancellationToken))).ToList();
+		var datasetTables = await _datasetMetadata.LoadEnabledTablesAsync(
+			connection,
+			widget.DatasetKey,
+			cancellationToken);
 
 		if (datasetTables.Count == 0)
 			throw new InvalidOperationException(

@@ -9,19 +9,12 @@ public sealed class DashboardDrilldownService
 	private const int PageSize = 50;
 
 	private readonly SqlConnectionFactory _db;
+	private readonly DatasetMetadataProvider _datasetMetadata;
 	private readonly DatabaseSchemaDiscoveryService _schemaDiscovery;
 	private readonly DatabaseRelationshipService _relationships;
 	private readonly AutomaticJoinPlannerService _joinPlanner;
 
-	private sealed class DatasetTableRow
-	{
-		public int DatasetTableId { get; set; }
-		public string SchemaName { get; set; } = "";
-		public string ObjectName { get; set; } = "";
-		public string? TableAlias { get; set; }
-	}
-
-	private sealed class DatasetColumnRow
+		private sealed class DatasetColumnRow
 	{
 		public string ColumnKey { get; set; } = "";
 		public string ColumnName { get; set; } = "";
@@ -34,11 +27,13 @@ public sealed class DashboardDrilldownService
 
 	public DashboardDrilldownService(
 		SqlConnectionFactory db,
+		DatasetMetadataProvider datasetMetadata,
 		DatabaseSchemaDiscoveryService schemaDiscovery,
 		DatabaseRelationshipService relationships,
 		AutomaticJoinPlannerService joinPlanner)
 	{
 		_db = db;
+		_datasetMetadata = datasetMetadata;
 		_schemaDiscovery = schemaDiscovery;
 		_relationships = relationships;
 		_joinPlanner = joinPlanner;
@@ -66,21 +61,9 @@ public sealed class DashboardDrilldownService
 		await using var connection = await _db.OpenAsync();
 
 		// Load enabled physical tables for this dataset.
-		const string tablesSql = """
-            SELECT
-                DatasetTableId,
-                SchemaName,
-                ObjectName,
-                TableAlias,
-            FROM dash.DatasetTable
-            WHERE DatasetKey = @Dataset
-              AND IsEnabled = 1
-            ORDER BY IsPrimary DESC, DatasetTableId;
-            """;
-
-		var datasetTables = (await connection.QueryAsync<DatasetTableRow>(
-			tablesSql,
-			new { request.Dataset })).ToList();
+		var datasetTables = await _datasetMetadata.LoadEnabledTablesAsync(
+			connection,
+			request.Dataset);
 
 		if (datasetTables.Count == 0)
 			throw new ArgumentException(
