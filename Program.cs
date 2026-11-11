@@ -10,6 +10,7 @@ builder.Services.AddRazorPages();
 builder.Services.AddControllers();
 builder.Services.AddSingleton<SqlConnectionFactory>();
 builder.Services.AddScoped<DepartmentRepository>();
+builder.Services.AddScoped<DashboardLayoutRepository>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<DatasetMetadataProvider>();
 builder.Services.AddScoped<DashboardDrilldownService>();
