@@ -61,9 +61,21 @@ public sealed class DashboardDrilldownService
 		await using var connection = await _db.OpenAsync();
 
 		// Load enabled physical tables for this dataset.
-		var datasetTables = await _datasetMetadata.LoadEnabledTablesAsync(
-			connection,
-			request.Dataset);
+		const string tablesSql = """
+            SELECT
+                DatasetTableId,
+                SchemaName,
+                ObjectName,
+                TableAlias,
+            FROM dash.DatasetTable
+            WHERE DatasetKey = @Dataset
+              AND IsEnabled = 1
+            ORDER BY IsPrimary DESC, DatasetTableId;
+            """;
+
+		var datasetTables = (await connection.QueryAsync<DatasetTableRow>(
+			tablesSql,
+			new { request.Dataset })).ToList();
 
 		if (datasetTables.Count == 0)
 			throw new ArgumentException(
