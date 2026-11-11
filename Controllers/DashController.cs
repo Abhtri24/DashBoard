@@ -1160,8 +1160,8 @@ public async Task<IActionResult> GetRelationships(
 			isValid = true,
 			joinPlan = preparation.JoinPlan,
 			safety = preparation.Safety,
-			preparation.Generated!.Sql,
-			preparation.Generated.Parameters
+			Sql = preparation.Generated!.Sql,
+			Parameters = preparation.Generated.Parameters
 		});
 	}
 
