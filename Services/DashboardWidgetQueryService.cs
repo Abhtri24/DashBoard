@@ -175,23 +175,10 @@ public sealed class DashboardWidgetQueryService
 			throw new ArgumentException("Widget has no configured fields.");
 
 		// Load enabled physical tables belonging to the dataset.
-		const string tablesSql = """
-            SELECT
-                DatasetTableId,
-                SchemaName,
-                ObjectName,
-                TableAlias,
-            FROM dash.DatasetTable
-            WHERE DatasetKey = @DatasetKey
-              AND IsEnabled = 1
-            ORDER BY IsPrimary DESC, DatasetTableId;
-            """;
-
-		var datasetTables = (await connection.QueryAsync<DatasetTableRow>(
-			new CommandDefinition(
-				tablesSql,
-				new { widget.DatasetKey },
-				cancellationToken: cancellationToken))).ToList();
+		var datasetTables = await _datasetMetadata.LoadEnabledTablesAsync(
+			connection,
+			widget.DatasetKey,
+			cancellationToken);
 
 		if (datasetTables.Count == 0)
 			throw new InvalidOperationException(
