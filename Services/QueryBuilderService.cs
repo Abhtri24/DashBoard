@@ -8,6 +8,7 @@ namespace DashBoard.Services;
 public sealed class QueryBuilderService
 {
 	private readonly SqlConnectionFactory _db;
+	private readonly DatasetMetadataProvider _datasetMetadata;
 	private readonly DatabaseSchemaDiscoveryService _schemaDiscovery;
 	private readonly DatabaseRelationshipService _relationships;
 	private readonly AutomaticJoinPlannerService _joinPlanner;
@@ -18,6 +19,7 @@ public sealed class QueryBuilderService
 
 	public QueryBuilderService(
 		SqlConnectionFactory db,
+		DatasetMetadataProvider datasetMetadata,
 		DatabaseSchemaDiscoveryService schemaDiscovery,
 		DatabaseRelationshipService relationships,
 		AutomaticJoinPlannerService joinPlanner,
@@ -27,6 +29,7 @@ public sealed class QueryBuilderService
 		AggregationQueryExecutionService executor)
 	{
 		_db = db;
+		_datasetMetadata = datasetMetadata;
 		_schemaDiscovery = schemaDiscovery;
 		_relationships = relationships;
 		_joinPlanner = joinPlanner;
@@ -36,15 +39,7 @@ public sealed class QueryBuilderService
 		_executor = executor;
 	}
 
-	private sealed class TableRow
-	{
-		public int DatasetTableId { get; set; }
-		public string SchemaName { get; set; } = "";
-		public string ObjectName { get; set; } = "";
-		public string? TableAlias { get; set; }
-	}
-
-	private sealed class ColumnRow
+		private sealed class ColumnRow
 	{
 		public string ColumnKey { get; set; } = "";
 		public string ColumnName { get; set; } = "";
@@ -311,23 +306,10 @@ public sealed class QueryBuilderService
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.ToList();
 
-		const string tablesSql = """
-            SELECT
-                DatasetTableId,
-                SchemaName,
-                ObjectName,
-                TableAlias
-            FROM dash.DatasetTable
-            WHERE DatasetKey = @DatasetKey
-              AND IsEnabled = 1
-            ORDER BY IsPrimary DESC, DatasetTableId;
-            """;
-
-		var tables = (await connection.QueryAsync<TableRow>(
-			new CommandDefinition(
-				tablesSql,
-				new { DatasetKey = datasetKey },
-				cancellationToken: cancellationToken))).ToList();
+		var tables = await _datasetMetadata.LoadEnabledTablesAsync(
+			connection,
+			datasetKey,
+			cancellationToken);
 
 		var tablesById = tables.ToDictionary(t => t.DatasetTableId);
 
@@ -540,7 +522,7 @@ public sealed class QueryBuilderService
 			StringComparison.OrdinalIgnoreCase);
 	}
 
-	private static AggregationTable ToAggregationTable(TableRow table)
+	private static AggregationTable ToAggregationTable(DatasetTableMetadata table)
 	{
 		return new AggregationTable
 		{
@@ -550,7 +532,7 @@ public sealed class QueryBuilderService
 		};
 	}
 
-	private static string GetTableAlias(TableRow table)
+	private static string GetTableAlias(DatasetTableMetadata table)
 	{
 		return string.IsNullOrWhiteSpace(table.TableAlias)
 			? $"t{table.DatasetTableId}"
