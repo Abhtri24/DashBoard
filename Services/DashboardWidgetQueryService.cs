@@ -43,7 +43,6 @@ public sealed class DashboardWidgetQueryService
 		public string SchemaName { get; set; } = "";
 		public string ObjectName { get; set; } = "";
 		public string? TableAlias { get; set; }
-		public bool IsPrimary { get; set; }
 	}
 
 	private sealed class DatasetColumnRow
@@ -187,7 +186,6 @@ public sealed class DashboardWidgetQueryService
                 SchemaName,
                 ObjectName,
                 TableAlias,
-                IsPrimary
             FROM dash.DatasetTable
             WHERE DatasetKey = @DatasetKey
               AND IsEnabled = 1
@@ -246,9 +244,6 @@ public sealed class DashboardWidgetQueryService
 				throw new InvalidOperationException(
 					$"Unknown dataset column '{key}'.");
 		}
-
-		var primaryTable = datasetTables.FirstOrDefault(x => x.IsPrimary)
-			?? datasetTables[0];
 
 		// Determine which physical tables are needed.
 		var referencedTableIds = selectedColumns
