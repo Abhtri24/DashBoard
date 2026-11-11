@@ -18,6 +18,7 @@ builder.Services.AddScoped<DatabaseRelationshipService>();
 builder.Services.AddScoped<DatabaseAggregationSafetyService>();
 builder.Services.AddScoped<AggregationQueryValidator>();
 builder.Services.AddScoped<AggregationSqlGenerator>();
+builder.Services.AddScoped<AggregationQueryPreparationService>();
 builder.Services.AddScoped<AutomaticJoinPlannerService>();
 builder.Services.AddScoped<AggregationQueryExecutionService>();
 builder.Services.AddScoped<DashboardConfigurationService>();
