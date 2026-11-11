@@ -1,6 +1,7 @@
 using DashBoard;
 using DashBoard.Catalog;
 using DashBoard.Services;
+using DashBoard.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,6 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 builder.Services.AddControllers();
 builder.Services.AddSingleton<SqlConnectionFactory>();
+builder.Services.AddScoped<DepartmentRepository>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<DatasetMetadataProvider>();
 builder.Services.AddScoped<DashboardDrilldownService>();
