@@ -49,8 +49,10 @@ public sealed class AggregationQueryPreparationService
 		CancellationToken cancellationToken = default)
 	{
 		var schema = await _schemaDiscovery.DiscoverAsync(null, cancellationToken);
-		var graph = await _relationships.BuildGraphAsync(null, cancellationToken);
-
+		var graph = await _relationships.BuildGraphAsync(
+			null,
+			cancellationToken,
+			discoveredSchema: schema);
 		var joinPlan = _joinPlanner.Plan(graph, plan.Tables);
 		if (!joinPlan.IsValid)
 		{
