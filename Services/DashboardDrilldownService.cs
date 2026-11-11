@@ -19,7 +19,6 @@ public sealed class DashboardDrilldownService
 		public string SchemaName { get; set; } = "";
 		public string ObjectName { get; set; } = "";
 		public string? TableAlias { get; set; }
-		public bool IsPrimary { get; set; }
 	}
 
 	private sealed class DatasetColumnRow
@@ -73,7 +72,6 @@ public sealed class DashboardDrilldownService
                 SchemaName,
                 ObjectName,
                 TableAlias,
-                IsPrimary
             FROM dash.DatasetTable
             WHERE DatasetKey = @Dataset
               AND IsEnabled = 1
