@@ -4,6 +4,7 @@ using DashBoard;
 using DashBoard.Catalog;
 using DashBoard.Models;
 using DashBoard.Services;
+using DashBoard.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
@@ -13,6 +14,7 @@ using Microsoft.Extensions.Caching.Memory;
 public class DashController : ControllerBase
 {
 	private readonly SqlConnectionFactory _db;
+	private readonly DepartmentRepository _departmentRepository;
 	private readonly CatalogService _catalog;
 	private readonly DashboardQueryService _queryService;
 	private readonly DashboardOverviewService _overviewService;
@@ -45,6 +47,7 @@ public class DashController : ControllerBase
 
 	public DashController(
 		SqlConnectionFactory db,
+		DepartmentRepository departmentRepository,
 		CatalogService catalog,
 		DashboardQueryService queryService,
 		DashboardOverviewService overviewService,
@@ -66,6 +69,7 @@ public class DashController : ControllerBase
 		)
 	{
 		_db = db;
+		_departmentRepository = departmentRepository;
 		_catalog = catalog;
 		_queryService = queryService;
 		_overviewService = overviewService;
@@ -127,59 +131,6 @@ public class DashController : ControllerBase
 	private string? GetActiveDepartment() =>
 		HttpContext.Session.GetString(GetTabSessionKey(DepartmentSessionKey));
 		
-	private async Task<bool> HasDepartmentAccessAsync(
-		int userId,
-		string department,
-		CancellationToken cancellationToken)
-	{
-		await using var connection = await _db.OpenAsync();
-		const string sql = """
-			SELECT CASE WHEN EXISTS
-			(
-				SELECT 1
-				FROM org.UserDepartment ud
-				INNER JOIN dash.Department d
-					ON d.DepartmentKey = ud.DepartmentKey
-				WHERE ud.UserId = @UserId
-				  AND ud.DepartmentKey = @Department
-				  AND d.IsActive = 1
-			) THEN 1 ELSE 0 END;
-			""";
-
-		return await connection.ExecuteScalarAsync<bool>(
-			new CommandDefinition(
-				sql,
-				new { UserId = userId, Department = department },
-				cancellationToken: cancellationToken));
-	}
-
-
-	private async Task<bool> HasDepartmentAdminAccessAsync(
-		int userId,
-		string department,
-		CancellationToken cancellationToken)
-	{
-		await using var connection = await _db.OpenAsync();
-		const string sql = """
-			SELECT CASE WHEN EXISTS
-			      (
-			          SELECT 1
-			          FROM org.UserDepartment ud
-			          INNER JOIN dash.Department d
-			              ON d.DepartmentKey = ud.DepartmentKey
-			          WHERE ud.UserId = @UserId
-			            AND ud.DepartmentKey = @Department
-			            AND ud.DepartmentRole = N'Admin'
-			            AND d.IsActive = 1
-			      ) THEN 1 ELSE 0 END;
-			""";
-		return await connection.ExecuteScalarAsync<bool>(
-			new CommandDefinition(
-				sql,
-				new { UserId = userId, Department = department },
-				cancellationToken: cancellationToken));
-	}
-
 	private async Task<IActionResult?> CheckDepartmentAccessAsync(
 		string? department,
 		CancellationToken cancellationToken)
@@ -191,7 +142,7 @@ public class DashController : ControllerBase
 		if (string.IsNullOrWhiteSpace(department))
 			return BadRequest(new { error = "Department is required." });
 
-		if (!await HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
+		if (!await _departmentRepository.HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
 			return StatusCode(403, new { error = "You do not have access to this department." });
 
 		return null;
@@ -431,7 +382,7 @@ public class DashController : ControllerBase
 		if (accessError is not null)
 			return accessError;
 
-		if (!await HasDepartmentAdminAccessAsync(
+		if (!await _departmentRepository.HasDepartmentAdminAccessAsync(
 			userId.Value, department, cancellationToken))
 		{
 			return StatusCode(403, new
@@ -545,7 +496,7 @@ public class DashController : ControllerBase
 		if (accessError is not null)
 			return accessError;
 
-		if (!await HasDepartmentAdminAccessAsync(
+		if (!await _departmentRepository.HasDepartmentAdminAccessAsync(
 			userId.Value, department, cancellationToken))
 		{
 			return StatusCode(403, new
@@ -617,7 +568,7 @@ public class DashController : ControllerBase
 		if (!userId.HasValue) return BadRequest(new { error = "Select a demo user first." });
 		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
 		if (accessError is not null) return accessError;
-		if (!await HasDepartmentAdminAccessAsync(userId.Value, department, cancellationToken))
+		if (!await _departmentRepository.HasDepartmentAdminAccessAsync(userId.Value, department, cancellationToken))
 			return StatusCode(403, new { error = "Only department admins can manage layout presets." });
 		if (string.IsNullOrWhiteSpace(dashboardKey) ||
 			string.IsNullOrWhiteSpace(request.PresetName) ||
@@ -677,7 +628,7 @@ public class DashController : ControllerBase
 		if (!userId.HasValue) return BadRequest(new { error = "Select a demo user first." });
 		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
 		if (accessError is not null) return accessError;
-		if (!await HasDepartmentAdminAccessAsync(userId.Value, department, cancellationToken))
+		if (!await _departmentRepository.HasDepartmentAdminAccessAsync(userId.Value, department, cancellationToken))
 			return StatusCode(403, new { error = "Only department admins can manage layout presets." });
 		if (string.IsNullOrWhiteSpace(request.PresetName) || request.PresetName.Trim().Length > 100)
 			return BadRequest(new { error = "A preset name of up to 100 characters is required." });
@@ -723,7 +674,7 @@ public class DashController : ControllerBase
 		if (!userId.HasValue) return BadRequest(new { error = "Select a demo user first." });
 		var accessError = await CheckDepartmentAccessAsync(department, cancellationToken);
 		if (accessError is not null) return accessError;
-		if (!await HasDepartmentAdminAccessAsync(userId.Value, department, cancellationToken))
+		if (!await _departmentRepository.HasDepartmentAdminAccessAsync(userId.Value, department, cancellationToken))
 			return StatusCode(403, new { error = "Only department admins can manage layout presets." });
 
 		await using var connection = await _db.OpenAsync();
@@ -790,7 +741,7 @@ public class DashController : ControllerBase
 		if (string.IsNullOrWhiteSpace(department))
 			return BadRequest(new { error = "Select a department." });
 
-		if (!await HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
+		if (!await _departmentRepository.HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
 			return StatusCode(403, new { error = "You do not have access to the selected department." });
 
 		HttpContext.Session.SetString(GetTabSessionKey(DepartmentSessionKey), department);
@@ -808,7 +759,7 @@ public class DashController : ControllerBase
 		if (string.IsNullOrWhiteSpace(department))
 			return BadRequest(new { error = "No department selected." });
 
-		if (!await HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
+		if (!await _departmentRepository.HasDepartmentAccessAsync(userId.Value, department, cancellationToken))
 		{
 			HttpContext.Session.Remove(GetTabSessionKey(DepartmentSessionKey));
 			return StatusCode(403, new { error = "The selected department is not assigned to this user." });
