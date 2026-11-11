@@ -10,37 +10,22 @@ public sealed class DashboardWidgetQueryService
 {
 	private readonly SqlConnectionFactory _db;
 	private readonly DatasetMetadataProvider _datasetMetadata;
-	private readonly DatabaseSchemaDiscoveryService _schemaDiscovery;
-	private readonly DatabaseRelationshipService _relationships;
-	private readonly AutomaticJoinPlannerService _joinPlanner;
-	private readonly AggregationQueryValidator _validator;
-	private readonly DatabaseAggregationSafetyService _safety;
-	private readonly AggregationSqlGenerator _sqlGenerator;
+	private readonly AggregationQueryPreparationService _preparation;
 	private readonly AggregationQueryExecutionService _executor;
 
 	public DashboardWidgetQueryService(
-		SqlConnectionFactory db,
-		DatasetMetadataProvider datasetMetadata,
-		DatabaseSchemaDiscoveryService schemaDiscovery,
-		DatabaseRelationshipService relationships,
-		AutomaticJoinPlannerService joinPlanner,
-		AggregationQueryValidator validator,
-		DatabaseAggregationSafetyService safety,
-		AggregationSqlGenerator sqlGenerator,
-		AggregationQueryExecutionService executor)
+	SqlConnectionFactory db,
+	DatasetMetadataProvider datasetMetadata,
+	AggregationQueryPreparationService preparation,
+	AggregationQueryExecutionService executor)
 	{
 		_db = db;
 		_datasetMetadata = datasetMetadata;
-		_schemaDiscovery = schemaDiscovery;
-		_relationships = relationships;
-		_joinPlanner = joinPlanner;
-		_validator = validator;
-		_safety = safety;
-		_sqlGenerator = sqlGenerator;
+		_preparation = preparation;
 		_executor = executor;
 	}
 
-		private sealed class DatasetColumnRow
+	private sealed class DatasetColumnRow
 	{
 		public string ColumnKey { get; set; } = "";
 		public string ColumnName { get; set; } = "";
@@ -253,32 +238,11 @@ public sealed class DashboardWidgetQueryService
 				? $"t{x.DatasetTableId}"
 				: x.TableAlias!);
 
-		// Discover the physical schema and construct the dataset-specific
-		// relationship graph. Only approved dataset relationships are used.
-		var schema = await _schemaDiscovery.DiscoverAsync(
-			null,
-			cancellationToken);
 
-		var graph = await _relationships.BuildGraphAsync(
-			null,
-			cancellationToken,
-			widget.DatasetKey);
-
-		var joinPlan = _joinPlanner.Plan(graph, selectedTables);
-
-		if (!joinPlan.IsValid)
-			throw new InvalidOperationException(
-				string.Join("; ", joinPlan.Errors));
 
 		var plan = new AggregationQueryPlan
 		{
-			Tables = joinPlan.Tables,
-			Joins = joinPlan.Joins.Select(j => new AggregationJoin
-			{
-				LeftAlias = j.LeftAlias,
-				RightAlias = j.RightAlias,
-				ConstraintName = j.ConstraintName
-			}).ToList(),
+			Tables = selectedTables,
 			Page = page,
 			PageSize = pageSize
 		};
@@ -369,32 +333,40 @@ public sealed class DashboardWidgetQueryService
 			});
 		}
 
-		// Validate the query against the discovered physical schema.
-		var validationErrors = _validator.Validate(plan, schema);
+		var preparation = await _preparation.PrepareAsync(
+	plan,
+	cancellationToken,
+	widget.DatasetKey);
 
-		if (validationErrors.Count > 0)
+		switch (preparation.Failure)
+		{
+			case AggregationQueryPreparationFailure.JoinPlan:
+				throw new InvalidOperationException(
+					string.Join("; ", preparation.Errors));
+
+			case AggregationQueryPreparationFailure.Validation:
+				throw new ArgumentException(
+					string.Join("; ", preparation.Errors));
+
+			case AggregationQueryPreparationFailure.Safety:
+				var details = preparation.Safety?.Warnings.Count > 0
+					? string.Join("; ", preparation.Safety.Warnings)
+					: "The selected joins may produce incorrect aggregations.";
+
+				throw new InvalidOperationException(
+					$"Unsafe widget aggregation. {details}");
+		}
+
+		if (preparation.Generated is null)
+		{
 			throw new InvalidOperationException(
-				string.Join("; ", validationErrors));
-
-		// Reject aggregations that could produce incorrect results
-		// because of unsafe joins.
-		var safety = _safety.Analyze(graph, plan);
-
-		if (!safety.IsSafe)
-			throw new InvalidOperationException(
-				"Unsafe widget aggregation: " +
-				string.Join("; ", safety.Warnings));
-
-		var generated = _sqlGenerator.Generate(
-			plan,
-			joinPlan,
-			schema);
+				"Query preparation did not produce SQL.");
+		}
 
 		return await _executor.ExecuteAsync(
-			generated,
+			preparation.Generated,
 			cancellationToken);
 	}
-
 	private static AggregationExpression ParseExpression(
 		string json,
 		int expectedTableId,

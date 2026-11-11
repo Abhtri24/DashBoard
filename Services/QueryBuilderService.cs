@@ -9,37 +9,20 @@ public sealed class QueryBuilderService
 {
 	private readonly SqlConnectionFactory _db;
 	private readonly DatasetMetadataProvider _datasetMetadata;
-	private readonly DatabaseSchemaDiscoveryService _schemaDiscovery;
-	private readonly DatabaseRelationshipService _relationships;
-	private readonly AutomaticJoinPlannerService _joinPlanner;
-	private readonly AggregationQueryValidator _validator;
-	private readonly DatabaseAggregationSafetyService _safety;
-	private readonly AggregationSqlGenerator _sqlGenerator;
+	private readonly AggregationQueryPreparationService _preparation;
 	private readonly AggregationQueryExecutionService _executor;
-
 	public QueryBuilderService(
 		SqlConnectionFactory db,
 		DatasetMetadataProvider datasetMetadata,
-		DatabaseSchemaDiscoveryService schemaDiscovery,
-		DatabaseRelationshipService relationships,
-		AutomaticJoinPlannerService joinPlanner,
-		AggregationQueryValidator validator,
-		DatabaseAggregationSafetyService safety,
-		AggregationSqlGenerator sqlGenerator,
+		AggregationQueryPreparationService preparation,
 		AggregationQueryExecutionService executor)
 	{
 		_db = db;
 		_datasetMetadata = datasetMetadata;
-		_schemaDiscovery = schemaDiscovery;
-		_relationships = relationships;
-		_joinPlanner = joinPlanner;
-		_validator = validator;
-		_safety = safety;
-		_sqlGenerator = sqlGenerator;
+		_preparation = preparation;
 		_executor = executor;
 	}
-
-		private sealed class ColumnRow
+	private sealed class ColumnRow
 	{
 		public string ColumnKey { get; set; } = "";
 		public string ColumnName { get; set; } = "";
@@ -337,30 +320,13 @@ public sealed class QueryBuilderService
 			.ToList();
 
 		var aliasById = tables.ToDictionary(
-			t => t.DatasetTableId,
-			GetTableAlias);
-
-		var schema = await _schemaDiscovery.DiscoverAsync(
-			null,
-			cancellationToken);
-
-		var graph = await _relationships.BuildGraphAsync(
-			null,
-			cancellationToken,
-			datasetKey);
-
-		var joinPlan = _joinPlanner.Plan(graph, selectedTables);
-
-		if (!joinPlan.IsValid)
-		{
-			throw new InvalidOperationException(
-				string.Join("; ", joinPlan.Errors));
-		}
+	t => t.DatasetTableId,
+	GetTableAlias);
 
 		var plan = new AggregationQueryPlan
 		{
-			// Keep only explicitly selected tables here.
-			// The join planner may add intermediate tables to joinPlan.
+			// Only explicitly selected tables are included here.
+			// The preparation service resolves intermediate join tables.
 			Tables = selectedTables,
 			Page = page,
 			PageSize = pageSize
@@ -413,6 +379,7 @@ public sealed class QueryBuilderService
 		{
 			var key = GetString(filter, "measure");
 			var column = columnsByKey[key];
+
 			plan.HavingFilters.Add(new AggregationHavingFilter
 			{
 				MeasureKey = key,
@@ -435,57 +402,41 @@ public sealed class QueryBuilderService
 			}
 		}
 
-		// The validator and safety service must see the complete resolved
-		// join plan, including any intermediate tables.
-		var validationPlan = new AggregationQueryPlan
-		{
-			Tables = joinPlan.Tables,
-
-			Joins = joinPlan.Joins.Select(j => new AggregationJoin
-			{
-				LeftAlias = j.LeftAlias,
-				RightAlias = j.RightAlias,
-				ConstraintName = j.ConstraintName
-			}).ToList(),
-
-			Dimensions = plan.Dimensions,
-			Measures = plan.Measures,
-			Filters = plan.Filters,
-			HavingFilters = plan.HavingFilters,
-			Sort = plan.Sort,
-			Page = plan.Page,
-			PageSize = plan.PageSize
-		};
-
-		var errors = _validator.Validate(validationPlan, schema);
-
-		if (errors.Count > 0)
-		{
-			throw new ArgumentException(
-				string.Join("; ", errors));
-		}
-
-		var safety = _safety.Analyze(graph, validationPlan);
-
-		if (!safety.IsSafe)
-		{
-			var details = safety.Warnings.Count > 0
-				? string.Join("; ", safety.Warnings)
-				: "The selected joins may produce incorrect aggregations.";
-
-			throw new InvalidOperationException(
-				$"Query failed aggregation-safety validation. {details}");
-		}
-
-		var generated = _sqlGenerator.Generate(
+		var preparation = await _preparation.PrepareAsync(
 			plan,
-			joinPlan,
-			schema);
+			cancellationToken,
+			datasetKey);
+
+		switch (preparation.Failure)
+		{
+			case AggregationQueryPreparationFailure.JoinPlan:
+				throw new InvalidOperationException(
+					string.Join("; ", preparation.Errors));
+
+			case AggregationQueryPreparationFailure.Validation:
+				throw new ArgumentException(
+					string.Join("; ", preparation.Errors));
+
+			case AggregationQueryPreparationFailure.Safety:
+				var details = preparation.Safety?.Warnings.Count > 0
+					? string.Join("; ", preparation.Safety.Warnings)
+					: "The selected joins may produce incorrect aggregations.";
+
+				throw new InvalidOperationException(
+					$"Query failed aggregation-safety validation. {details}");
+		}
+
+		if (preparation.Generated is null)
+		{
+			throw new InvalidOperationException(
+				"Query preparation did not produce SQL.");
+		}
 
 		return await _executor.ExecuteAsync(
-			generated,
+			preparation.Generated,
 			cancellationToken);
 	}
+
 
 	private static async Task EnsureDatasetAccessAsync(
 		System.Data.IDbConnection connection,

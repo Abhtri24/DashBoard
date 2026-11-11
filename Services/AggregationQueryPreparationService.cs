@@ -45,14 +45,16 @@ public sealed class AggregationQueryPreparationService
 	}
 
 	public async Task<AggregationQueryPreparationResult> PrepareAsync(
-		AggregationQueryPlan plan,
-		CancellationToken cancellationToken = default)
+	AggregationQueryPlan plan,
+	CancellationToken cancellationToken = default,
+	string? datasetKey = null)
 	{
 		var schema = await _schemaDiscovery.DiscoverAsync(null, cancellationToken);
 		var graph = await _relationships.BuildGraphAsync(
-			null,
-			cancellationToken,
-			discoveredSchema: schema);
+	null,
+	cancellationToken,
+	datasetKey,
+	discoveredSchema: schema);
 		var joinPlan = _joinPlanner.Plan(graph, plan.Tables);
 		if (!joinPlan.IsValid)
 		{
@@ -76,6 +78,7 @@ public sealed class AggregationQueryPreparationService
 			Dimensions = plan.Dimensions,
 			Measures = plan.Measures,
 			Filters = plan.Filters,
+			HavingFilters = plan.HavingFilters,
 			Sort = plan.Sort,
 			Page = plan.Page,
 			PageSize = plan.PageSize
