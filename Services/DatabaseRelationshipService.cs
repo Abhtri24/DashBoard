@@ -71,11 +71,12 @@ public sealed class DatabaseRelationshipService
 	public async Task<DatabaseRelationshipGraph> BuildGraphAsync(
 		string? schemaName = null,
 		CancellationToken cancellationToken = default,
-		string? datasetKey = null)
+		string? datasetKey = null,
+		DatabaseSchema? discoveredSchema = null)
 	{
-		var schema = await _discovery.DiscoverAsync(
-			schemaName,
-			cancellationToken);
+		var schema = discoveredSchema ?? await _discovery.DiscoverAsync(
+	schemaName,
+	cancellationToken);
 
 		var relationships = string.IsNullOrWhiteSpace(datasetKey)
 			? schema.ForeignKeys
