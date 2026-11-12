@@ -169,8 +169,14 @@ let lastResult = null; // { data, dimensionKey, measureKey }
 
     async function initializeQueryBuilder() {
         try {
-            const context = await apiRequest('/api/dash/department');
-            activeDepartment = context.department;
+            const departments = await apiRequest('/api/dash/departments');
+            const department = (Array.isArray(departments) ? departments : [])[0];
+
+            if (!department) {
+                throw new Error('No department is available for the selected user.');
+            }
+
+            activeDepartment = department.key || department.Key;
 
             const result = await apiRequest(
                 `/api/dash/query-builder/datasets?department=${encodeURIComponent(activeDepartment)}`
@@ -397,10 +403,6 @@ if (dateFieldSelect.value) {
             );
             const data = result.rows || result.Rows || [];
 
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Query failed.');
-            }
 
             if (!data.length) {
                 status.textContent = 'No results found.';
