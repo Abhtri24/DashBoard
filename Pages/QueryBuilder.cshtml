@@ -18,7 +18,7 @@
                 <div class="col-12 col-md-4">
                     <label for="dataset" class="form-label">Dataset</label>
                     <select id="dataset" class="form-select">
-                        <option value="sales">Sales</option>
+                        <option value="">Select a dataset</option>
                     </select>
                 </div>
 
@@ -141,58 +141,113 @@ let chartInstance = null;
 let availableDimensions = [];
 let lastResult = null; // { data, dimensionKey, measureKey }
 
-    async function loadMetadata() {
-        try {
-            const response = await fetch(
-                '/api/dash/meta/datasets?dataset=' +
-                encodeURIComponent(datasetSelect.value));
+    let activeDepartment = null;
 
-            if (!response.ok) {
-                throw new Error(await response.text());
+    let dashboardTabId = sessionStorage.getItem('dashboard-tab-id');
+    if (!dashboardTabId) {
+        dashboardTabId = crypto.randomUUID();
+        sessionStorage.setItem('dashboard-tab-id', dashboardTabId);
+    }
+
+    async function apiRequest(url, options = {}) {
+        const response = await fetch(url, {
+            ...options,
+            headers: {
+                Accept: 'application/json',
+                'X-Dashboard-Tab': dashboardTabId,
+                ...(options.headers || {})
+            }
+        });
+
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+            throw new Error(data?.error || `Request failed (${response.status}).`);
+        }
+
+        return data;
+    }
+
+    async function initializeQueryBuilder() {
+        try {
+            const context = await apiRequest('/api/dash/department');
+            activeDepartment = context.department;
+
+            const result = await apiRequest(
+                `/api/dash/query-builder/datasets?department=${encodeURIComponent(activeDepartment)}`
+            );
+            const datasets = Array.isArray(result)
+                ? result
+                : (result?.value || result?.datasets || result?.Datasets || []);
+
+            datasetSelect.replaceChildren(
+                new Option('Select a dataset', ''),
+                ...datasets.map(item => new Option(
+                    item.label || item.Label || item.key || item.Key,
+                    item.key || item.Key
+                ))
+            );
+
+            if (!datasets.length) {
+                throw new Error('No datasets are available for the selected department.');
             }
 
-            const metadata = await response.json();
+            datasetSelect.value = datasets[0].key || datasets[0].Key;
+            await loadMetadata();
+        } catch (error) {
+            availableDimensions = [];
+            datasetSelect.replaceChildren(new Option('No dataset available', ''));
+            dimensionSelect.replaceChildren();
+            measureSelect.replaceChildren();
+            filtersContainer.replaceChildren();
+            addFilterButton.disabled = true;
+            showError('Could not initialize Query Builder: ' + error.message);
+            status.textContent = 'Query Builder initialization failed.';
+        }
+    }
+
+    async function loadMetadata() {
+        if (!activeDepartment || !datasetSelect.value) return;
+
+        try {
+            const metadata = await apiRequest(
+                `/api/dash/query-builder/metadata?department=${encodeURIComponent(activeDepartment)}&dataset=${encodeURIComponent(datasetSelect.value)}`
+            );
+
             availableDimensions = metadata.dimensions ?? [];
 
             dimensionSelect.replaceChildren();
             measureSelect.replaceChildren();
 
-            for (const dimension of metadata.dimensions) {
-                const option = new Option(
-                    dimension.label, dimension.key);
-                dimensionSelect.add(option);
+            for (const dimension of availableDimensions) {
+                dimensionSelect.add(new Option(dimension.label, dimension.key));
             }
 
-            for (const measure of metadata.measures) {
-                const option = new Option(
-                    measure.label, measure.key);
-                measureSelect.add(option);
+            for (const measure of metadata.measures ?? []) {
+                measureSelect.add(new Option(measure.label, measure.key));
             }
 
             dateFieldSelect.replaceChildren(new Option('(no date range)', ''));
-for (const d of metadata.dimensions) {
-    if (['date', 'datetime'].includes((d.type ?? '').toLowerCase())) {
-        dateFieldSelect.add(new Option(d.label, d.key));
-    }
-}
+            for (const dimension of availableDimensions) {
+                if (['date', 'datetime'].includes((dimension.type ?? '').toLowerCase())) {
+                    dateFieldSelect.add(new Option(dimension.label, dimension.key));
+                }
+            }
 
             status.textContent =
-                `Loaded ${metadata.dimensions.length} dimensions and ` +
-                `${metadata.measures.length} measures.`;
+                `Loaded ${availableDimensions.length} dimensions and ` +
+                `${(metadata.measures ?? []).length} measures.`;
 
-                filtersContainer.replaceChildren();
-addFilterButton.disabled = availableDimensions.length === 0;
-
+            filtersContainer.replaceChildren();
+            addFilterButton.disabled = availableDimensions.length === 0;
+            errorBox.classList.add('d-none');
         } catch (error) {
-             availableDimensions = [];
-    dimensionSelect.replaceChildren();
-    measureSelect.replaceChildren();
-    filtersContainer.replaceChildren();
-    addFilterButton.disabled = true;
-
-    showError('Could not load metadata: ' + error.message);
-
-    status.textContent = 'Metadata loading failed.';
+            availableDimensions = [];
+            dimensionSelect.replaceChildren();
+            measureSelect.replaceChildren();
+            filtersContainer.replaceChildren();
+            addFilterButton.disabled = true;
+            showError('Could not load metadata: ' + error.message);
+            status.textContent = 'Metadata loading failed.';
         }
     }
 
@@ -320,25 +375,28 @@ if (dateFieldSelect.value) {
         filters.push({ dimension: dateFieldSelect.value, operator: 'lt', value: addOneDay(to) });
     }
 }
-            const response = await fetch('/api/dash/query', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    dataset: datasetSelect.value,
-                    dimensions: dimensionSelect.value
-                        ? [dimensionSelect.value] : [],
-                    measures: measureSelect.value
-                        ? [measureSelect.value] : [],
-filters: filters,             
-sort: measureSelect.value
-                        ? [{ field: measureSelect.value, direction: 'desc' }]
-                        : [],
-                    page: 1,
-                    pageSize: 200
-                })
-            });
+            const result = await apiRequest(
+                `/api/dash/query-builder/execute?department=${encodeURIComponent(activeDepartment)}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dataset: datasetSelect.value,
+                        dimensions: dimensionSelect.value
+                            ? [dimensionSelect.value] : [],
+                        measures: measureSelect.value
+                            ? [measureSelect.value] : [],
+                        filters,
+                        sort: measureSelect.value
+                            ? [{ field: measureSelect.value, direction: 'desc' }]
+                            : [],
+                        page: 1,
+                        pageSize: 200
+                    })
+                }
+            );
+            const data = result.rows || result.Rows || [];
 
-            const data = await response.json();
 
             if (!response.ok) {
                 throw new Error(data.error || 'Query failed.');
@@ -446,6 +504,6 @@ addFilterButton.addEventListener('click', addFilterRow);
 datasetSelect.addEventListener('change', loadMetadata);
 runButton.addEventListener('click', runQuery);
 
-loadMetadata();
+initializeQueryBuilder();
 </script>
 }
