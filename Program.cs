@@ -1,5 +1,4 @@
 using DashBoard;
-using DashBoard.Catalog;
 using DashBoard.Services;
 using DashBoard.Repositories;
 
@@ -17,7 +16,6 @@ builder.Services.AddScoped<DashboardRepository>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<DatasetMetadataProvider>();
 builder.Services.AddScoped<DashboardDrilldownService>();
-builder.Services.AddSingleton<CatalogService>();
 builder.Services.AddScoped<DashboardOverviewService>();
 builder.Services.AddScoped<DatabaseSchemaDiscoveryService>();
 builder.Services.AddScoped<DatabaseRelationshipService>();
@@ -30,7 +28,6 @@ builder.Services.AddScoped<AggregationQueryExecutionService>();
 builder.Services.AddScoped<DashboardConfigurationService>();
 builder.Services.AddScoped<QueryBuilderService>();
 builder.Services.AddScoped<DashboardWidgetQueryService>();
-builder.Services.AddScoped<DashboardQueryService>();
 builder.Services.AddScoped<PdfExportService>();
 builder.Services.AddScoped<UIConfigurationService>();
 builder.Services.AddScoped<DashboardLayoutService>();
