@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Dapper;
 using DashBoard;
-using DashBoard.Catalog;
 using DashBoard.Models;
 using DashBoard.Services;
 using DashBoard.Repositories;
@@ -15,8 +14,6 @@ public class DashController : ControllerBase
 {
 	private readonly SqlConnectionFactory _db;
 	private readonly DepartmentRepository _departmentRepository;
-	private readonly CatalogService _catalog;
-	private readonly DashboardQueryService _queryService;
 	private readonly DashboardOverviewService _overviewService;
 	private readonly DashboardDrilldownService _drilldownService;
 
@@ -52,8 +49,6 @@ public class DashController : ControllerBase
 	public DashController(
 		SqlConnectionFactory db,
 		DepartmentRepository departmentRepository,
-		CatalogService catalog,
-		DashboardQueryService queryService,
 		DashboardOverviewService overviewService,
 		DashboardDrilldownService drilldownService,
 		DatabaseSchemaDiscoveryService schemaDiscovery,
@@ -74,8 +69,6 @@ public class DashController : ControllerBase
 	{
 		_db = db;
 		_departmentRepository = departmentRepository;
-		_catalog = catalog;
-		_queryService = queryService;
 		_overviewService = overviewService;
 		_drilldownService = drilldownService;
 		_schemaDiscovery = schemaDiscovery;
@@ -814,32 +807,6 @@ public class DashController : ControllerBase
 		return Ok(result);
 	}
 
-	[HttpGet("meta/datasets")]
-	public async Task<IActionResult> Meta([FromQuery] string dataset)
-	{
-		try
-		{
-			return Ok(await _catalog.GetAsync(dataset));
-		}
-		catch (ArgumentException ex)
-		{
-			return NotFound(new { error = ex.Message });
-		}
-	}
-
-	[HttpPost("query")]
-	public async Task<IActionResult> Query([FromBody] DashQueryRequest request)
-	{
-		try
-		{
-			var result = await _queryService.QueryAsync(request);
-			return Ok(result);
-		}
-		catch (ArgumentException ex)
-		{
-			return BadRequest(new { error = ex.Message });
-		}
-	}
 
 	[HttpPost("drilldown")]
 	public async Task<IActionResult> Drilldown([FromBody] DashDrilldownRequest request)
